@@ -1,6 +1,7 @@
 /* 悬浮待办 · 跨平台前端逻辑 (Tauri v2 + 原生 JS) */
 import { SCHEMA_VERSION, normalizeSnapshot, parseClassification, resolveClassification, editText } from './classification.js';
 import { createClassificationUI } from './classification-ui.js';
+import { reorderVisibleItems } from './todo-order.js';
 
 const TAURI = window.__TAURI__;
 const appWindow = TAURI?.window?.getCurrentWindow?.();
@@ -435,7 +436,7 @@ function rowHtml(it, day, kind) {
     kind === "recurring" && it.streak > 0
       ? `<span class="streak-chip" title="已连续 ${it.streak} 天">🔥${it.streak}</span>`
       : "";
-  return `<div class="row ${it.completed ? "done" : ""}" data-row="${it.id}"${classificationUI.rowStyle(it)}>
+  return `<div class="row ${it.completed ? "done" : ""}" data-row="${it.id}" data-kind="${kind}" data-day="${day}"${classificationUI.rowStyle(it)}>
     <div class="check ${it.completed ? "on" : ""}" data-act="${kind === "recurring" ? "rtoggle" : "toggle"}" data-id="${it.id}" data-day="${day}">${it.completed ? ICONS.check : ""}</div>
     <div class="body" data-act="${editAct}" data-id="${it.id}" data-day="${day}">
       <div class="title">${esc(it.title)}${timeChip}${streakChip}</div>
@@ -443,11 +444,14 @@ function rowHtml(it, day, kind) {
       ${detail}
     </div>
     ${badge}${actions}
+    <button type="button" class="drag-handle" title="拖拽排序（Alt + ↑ / ↓）" aria-label="拖拽排序：${esc(it.title)}" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"><svg viewBox="0 0 12 18" width="12" height="18" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="9" r="1.2"/><circle cx="9" cy="9" r="1.2"/><circle cx="3" cy="15" r="1.2"/><circle cx="9" cy="15" r="1.2"/></svg></button>
   </div>`;
 }
 
 function render() {
   if (classificationUI.isComposing()) return;
+  // Re-rendering cancels an unfinished drag before replacing its DOM.
+  finishTodoDrag(false, false);
   const oldInput = document.activeElement;
   const restoreInput = oldInput?.matches?.('#main-input, #recur-input, #memo-input')
     ? { id: oldInput.id, start: oldInput.selectionStart, end: oldInput.selectionEnd } : null;
@@ -579,6 +583,154 @@ function onDragStart(e) {
   if (e.target.closest("button")) return;
   appWindow?.startDragging().catch(() => {});
 }
+
+/* ---------------- 待办排序（指针事件兼容 Tauri WebView） ---------------- */
+
+let todoDrag = null;
+let suppressDragClick = false;
+
+function dragItems(row) {
+  return row.dataset.kind === "recurring" ? state.recurringItems : items(row.dataset.day);
+}
+
+function commitTodoOrder(row, orderedIds) {
+  const ordered = reorderVisibleItems(dragItems(row), orderedIds);
+  if (row.dataset.kind === "recurring") state.recurringItems = ordered;
+  else state.itemsByDay[row.dataset.day] = ordered;
+  save();
+}
+
+function updateTodoDrag() {
+  const drag = todoDrag;
+  if (!drag?.active) return;
+  drag.ghost.style.top = `${drag.y - drag.offsetY}px`;
+  drag.ghost.style.left = `${drag.x - drag.offsetX}px`;
+  const bounds = drag.container.getBoundingClientRect();
+  if (drag.x < bounds.left || drag.x > bounds.right || drag.y < bounds.top - 24 || drag.y > bounds.bottom + 24) return;
+  // A completed todo can only move among completed todos, and vice versa.
+  const peers = [...drag.container.querySelectorAll(":scope > .row")]
+    .filter((row) => row !== drag.row && row.classList.contains("done") === drag.row.classList.contains("done"));
+  const next = peers.find((row) => {
+    const rect = row.getBoundingClientRect();
+    return drag.y < rect.top + rect.height / 2;
+  });
+  if (next) drag.container.insertBefore(drag.row, next);
+  else if (peers.length) peers.at(-1).after(drag.row);
+}
+
+function scrollTodoDrag() {
+  const drag = todoDrag;
+  if (!drag?.active) return;
+  const bounds = drag.container.getBoundingClientRect();
+  if (drag.x >= bounds.left && drag.x <= bounds.right) {
+    const edge = 28;
+    const speed = drag.y < bounds.top + edge ? -8 : drag.y > bounds.bottom - edge ? 8 : 0;
+    if (speed) { drag.container.scrollTop += speed; updateTodoDrag(); }
+  }
+  drag.frame = requestAnimationFrame(scrollTodoDrag);
+}
+
+function finishTodoDrag(commit = false, redraw = true) {
+  const drag = todoDrag;
+  if (!drag) return;
+  if (drag.viewportWidth !== innerWidth || drag.viewportHeight !== innerHeight) commit = false;
+  todoDrag = null;
+  if (drag.frame) cancelAnimationFrame(drag.frame);
+  drag.ghost?.remove();
+  drag.row.classList.remove("drag-placeholder");
+  document.documentElement.classList.remove("sorting");
+  if (app.hasPointerCapture(drag.pointerId)) app.releasePointerCapture(drag.pointerId);
+  if (!drag.active) return;
+  suppressDragClick = true;
+  setTimeout(() => { suppressDragClick = false; }, 0);
+  if (commit) {
+    commitTodoOrder(drag.row, [...drag.container.querySelectorAll(":scope > .row")].map((row) => row.dataset.row));
+  }
+  if (redraw) {
+    const scrollTop = drag.container.scrollTop;
+    const id = drag.row.dataset.row;
+    render();
+    const row = [...app.querySelectorAll("[data-row]")].find((row) => row.dataset.row === id);
+    if (row) {
+      row.parentElement.scrollTop = scrollTop;
+      row.querySelector(".drag-handle")?.focus({ preventScroll: true });
+    }
+  }
+}
+
+app.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || todoDrag) return;
+  const row = e.target.closest(".row");
+  if (!row || e.target.closest(".check, .actions, a, input, textarea")) return;
+  if (e.target.closest("button") && !e.target.closest(".drag-handle")) return;
+  const bounds = row.getBoundingClientRect();
+  todoDrag = { row, container: row.parentElement, pointerId: e.pointerId,
+    viewportWidth: innerWidth, viewportHeight: innerHeight,
+    startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY,
+    offsetX: e.clientX - bounds.left, offsetY: e.clientY - bounds.top, active: false };
+  // Capture only after movement so ordinary title clicks still edit normally.
+});
+
+app.addEventListener("pointermove", (e) => {
+  const drag = todoDrag;
+  if (!drag || drag.pointerId !== e.pointerId) return;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (!drag.active) {
+    if (Math.hypot(drag.x - drag.startX, drag.y - drag.startY) < 5) return;
+    drag.active = true;
+    closeMenu();
+    app.setPointerCapture(e.pointerId);
+    const bounds = drag.row.getBoundingClientRect();
+    drag.ghost = drag.row.cloneNode(true);
+    drag.ghost.classList.add("drag-ghost");
+    drag.ghost.inert = true;
+    drag.ghost.setAttribute("aria-hidden", "true");
+    drag.ghost.style.width = `${bounds.width}px`;
+    // Keep compact typography when the clone is outside #app.
+    document.body.appendChild(drag.ghost);
+    drag.row.classList.add("drag-placeholder");
+    document.documentElement.classList.add("sorting");
+    scrollTodoDrag();
+  }
+  e.preventDefault();
+  updateTodoDrag();
+});
+
+document.addEventListener("pointerup", (e) => {
+  if (todoDrag?.pointerId === e.pointerId) finishTodoDrag(true);
+});
+document.addEventListener("pointercancel", () => finishTodoDrag(false));
+app.addEventListener("lostpointercapture", () => finishTodoDrag(false));
+window.addEventListener("blur", () => finishTodoDrag(false));
+window.addEventListener("resize", () => finishTodoDrag(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && todoDrag) { e.preventDefault(); finishTodoDrag(false); }
+});
+
+app.addEventListener("click", (e) => {
+  if (!suppressDragClick) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+}, true);
+
+app.addEventListener("keydown", (e) => {
+  if (!e.target.closest(".drag-handle") || !e.altKey || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+  e.preventDefault();
+  const row = e.target.closest(".row");
+  const arr = dragItems(row);
+  const selected = arr.find((item) => item.id === row.dataset.row);
+  if (!selected) return;
+  const peers = arr.filter((item) => classificationUI.filtered(item) && !!item.completed === !!selected.completed);
+  const index = peers.findIndex((item) => item.id === row.dataset.row);
+  const target = peers[index + (e.key === "ArrowUp" ? -1 : 1)];
+  if (!target) return;
+  const ids = arr.map((item) => item.id);
+  const from = ids.indexOf(row.dataset.row), to = ids.indexOf(target.id);
+  [ids[from], ids[to]] = [ids[to], ids[from]];
+  commitTodoOrder(row, ids);
+  const id = row.dataset.row;
+  render();
+  [...app.querySelectorAll("[data-row]")].find((row) => row.dataset.row === id)?.querySelector(".drag-handle")?.focus();
+});
 
 /* 事件委托 */
 app.addEventListener("click", (e) => {
