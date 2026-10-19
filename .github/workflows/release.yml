@@ -60,7 +60,7 @@ jobs:
 
       - name: Windows application smoke test
         if: matrix.platform == 'windows-latest'
-        run: npm run test:native -- src-tauri/target/release/floating-todo.exe
+        run: ./tests/native-smoke.ps1 -Executable src-tauri/target/release/floating-todo.exe
 
       - uses: actions/upload-artifact@v4
         if: always() && matrix.platform == 'windows-latest'
