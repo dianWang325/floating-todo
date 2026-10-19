@@ -1,4 +1,6 @@
 /* 悬浮待办 · 跨平台前端逻辑 (Tauri v2 + 原生 JS) */
+import { SCHEMA_VERSION, normalizeSnapshot, parseClassification, resolveClassification, editText } from './classification.js';
+import { createClassificationUI } from './classification-ui.js';
 
 const TAURI = window.__TAURI__;
 const appWindow = TAURI?.window?.getCurrentWindow?.();
@@ -89,6 +91,10 @@ function parseQuickInput(text, defaultDay) {
 
 function defaultState() {
   return {
+    schemaVersion: SCHEMA_VERSION,
+    projects: [],
+    tags: [],
+    colorCounters: { projects: 0, tags: 0 },
     selectedDay: "today",
     itemsByDay: { today: [], tomorrow: [], dayAfterTomorrow: [] },
     recurringItems: [],
@@ -106,25 +112,24 @@ function defaultState() {
   };
 }
 
+let startupNotice = '';
 function load() {
-  let s;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return defaultState();
+  let state;
   try {
-    s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-  } catch (e) {
-    s = null;
+    const parsed = JSON.parse(raw);
+    state = normalizeSnapshot(parsed, defaultState());
+    if ((parsed.schemaVersion || 1) < SCHEMA_VERSION && !localStorage.getItem(STORAGE_KEY + '/before-v2')) {
+      localStorage.setItem(STORAGE_KEY + '/before-v2', raw);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    // Keep the original snapshot recoverable before any subsequent save.
+    localStorage.setItem(STORAGE_KEY + '/recovery/' + Date.now(), raw);
+    startupNotice = '本地数据未能加载，原始快照已保留：' + error.message;
+    return defaultState();
   }
-  const base = defaultState();
-  if (!s) return base;
-  // 合并，兼容旧数据缺字段
-  const state = {
-    ...base,
-    ...s,
-    itemsByDay: { ...base.itemsByDay, ...(s.itemsByDay || {}) },
-    settings: { ...base.settings, ...(s.settings || {}) },
-    memo: { ...base.memo, ...(s.memo || {}) },
-    recurringItems: s.recurringItems || [],
-    lastActiveDate: s.lastActiveDate || todayStr(),
-  };
   if (isWindows && state.settings.showOnDesktop) state.settings.alwaysOnTop = false;
   return state;
 }
@@ -191,10 +196,10 @@ function completedCount(day = state.selectedDay) {
   return items(day).filter((i) => i.completed).length;
 }
 
-function addItem(title, day = state.selectedDay, time = null) {
+function addItem(title, day = state.selectedDay, time = null, classification = { projectId: null, tagIds: [] }) {
   const t = title.trim();
   if (!t) return null;
-  const it = { id: uid(), title: t, detail: "", time, completed: false, notified: false, createdAt: Date.now() };
+  const it = { id: uid(), title: t, detail: "", time, completed: false, notified: false, createdAt: Date.now(), ...classification };
   state.itemsByDay[day].unshift(it);
   save();
   return it;
@@ -227,12 +232,12 @@ function moveItem(id, from, to) {
   save();
 }
 function clearCompleted(day) {
-  state.itemsByDay[day] = state.itemsByDay[day].filter((i) => !i.completed);
+  state.itemsByDay[day] = state.itemsByDay[day].filter((i) => !i.completed || !classificationUI.filtered(i));
   save();
 }
 
 /* 常驻「每天」待办 */
-function addRecurring(title, time = null) {
+function addRecurring(title, time = null, classification = { projectId: null, tagIds: [] }) {
   const t = title.trim();
   if (!t) return;
   state.recurringItems.unshift({
@@ -245,8 +250,10 @@ function addRecurring(title, time = null) {
     streak: 0,
     lastDone: null,
     createdAt: Date.now(),
+    ...classification,
   });
   save();
+  return state.recurringItems[0];
 }
 function toggleRecurring(id) {
   const it = state.recurringItems.find((i) => i.id === id);
@@ -338,6 +345,7 @@ const ICONS = {
 /* ---------------- 渲染 ---------------- */
 
 const app = document.getElementById("app");
+const classificationUI = createClassificationUI({ getState: () => state, save, render, openSettings });
 let compact = false;
 let activeMenu = null; // { id, day, kind }
 let appliedWindowMode = null;
@@ -410,6 +418,7 @@ function rowHtml(it, day, kind) {
   if (!compact) {
     if (kind === "recurring") {
       actions = `<div class="actions">
+        <button class="icon-btn sm" data-class-ui="task" data-task="${esc(it.id)}" title="项目与标签">#</button>
         <button class="icon-btn sm" data-act="unpin" data-id="${it.id}" title="取消每天">${ICONS.pinOff}</button>
         <button class="icon-btn sm" data-act="rdel" data-id="${it.id}" title="删除">${ICONS.trash}</button>
       </div>`;
@@ -426,10 +435,11 @@ function rowHtml(it, day, kind) {
     kind === "recurring" && it.streak > 0
       ? `<span class="streak-chip" title="已连续 ${it.streak} 天">🔥${it.streak}</span>`
       : "";
-  return `<div class="row ${it.completed ? "done" : ""}" data-row="${it.id}">
+  return `<div class="row ${it.completed ? "done" : ""}" data-row="${it.id}"${classificationUI.rowStyle(it)}>
     <div class="check ${it.completed ? "on" : ""}" data-act="${kind === "recurring" ? "rtoggle" : "toggle"}" data-id="${it.id}" data-day="${day}">${it.completed ? ICONS.check : ""}</div>
     <div class="body" data-act="${editAct}" data-id="${it.id}" data-day="${day}">
       <div class="title">${esc(it.title)}${timeChip}${streakChip}</div>
+      ${classificationUI.rowMetadata(it)}
       ${detail}
     </div>
     ${badge}${actions}
@@ -437,11 +447,16 @@ function rowHtml(it, day, kind) {
 }
 
 function render() {
+  if (classificationUI.isComposing()) return;
+  const oldInput = document.activeElement;
+  const restoreInput = oldInput?.matches?.('#main-input, #recur-input, #memo-input')
+    ? { id: oldInput.id, start: oldInput.selectionStart, end: oldInput.selectionEnd } : null;
   rollOverIfNeeded();
   applyWindowChrome();
 
   const day = compact ? "today" : state.selectedDay;
-  const showRecurring = day === "today" && state.recurringItems.length > 0;
+  const recurring = state.recurringItems.filter(classificationUI.filtered);
+  const showRecurring = day === "today" && (recurring.length > 0 || recurringComposerOpen);
   const cnt = incompleteCount();
 
   let html = "";
@@ -465,13 +480,15 @@ function render() {
     html += `</div>`;
   }
 
+  html += classificationUI.filterBar();
+
   if (showRecurring) {
     html += `<div class="recurring"><div class="head">
       <span class="ic">${ICONS.repeat}</span><span>每天</span><div class="spacer"></div>`;
     if (!compact)
       html += `<button class="icon-btn sm" data-act="raddtoggle" title="添加每天常驻待办">${ICONS.plus}</button>`;
     html += `</div>`;
-    state.recurringItems.forEach((it) => (html += rowHtml(it, "today", "recurring")));
+    recurring.forEach((it) => (html += rowHtml(it, "today", "recurring")));
     if (!compact && recurringComposerOpen) {
       html += `<div class="composer sm"><span class="ic">${ICONS.repeat}</span>
         <input id="recur-input" placeholder="添加每天常驻待办" value="${esc(recurDraft)}"/>
@@ -481,10 +498,10 @@ function render() {
   }
 
   // 列表
-  const list = items(day);
+  const list = items(day).filter(classificationUI.filtered);
   if (list.length === 0) {
-    const a = showRecurring ? `${DAY_TITLE[day]}没有临时待办` : `${DAY_TITLE[day]}还没有待办`;
-    const b = showRecurring ? "上方是每天常驻的事" : "写下一件真正要推进的事";
+    const a = classificationUI.hasFilters() ? '没有符合条件的任务' : showRecurring ? `${DAY_TITLE[day]}没有临时待办` : `${DAY_TITLE[day]}还没有待办`;
+    const b = classificationUI.hasFilters() ? '<button class="link-btn" data-class-ui="clear">清除筛选</button>' : showRecurring ? "上方是每天常驻的事" : "写下一件真正要推进的事";
     html += `<div class="empty"><div class="ic">${ICONS.note}</div><div class="a">${a}</div><div class="b">${b}</div></div>`;
   } else {
     html += `<div class="list">`;
@@ -493,8 +510,9 @@ function render() {
   }
 
   if (!compact) {
-    if (completedCount(day) > 0) {
-      html += `<div class="clear-bar"><button data-act="clear" data-day="${day}">${ICONS.trash}<span>清除已完成（${completedCount(day)}）</span></button></div>`;
+    const visibleCompleted = list.filter(it => it.completed).length;
+    if (visibleCompleted > 0) {
+      html += `<div class="clear-bar"><button data-act="clear" data-day="${day}">${ICONS.trash}<span>清除已完成（${visibleCompleted}）</span></button></div>`;
     }
     // 输入框
     const editing = composerEditId;
@@ -523,6 +541,11 @@ function render() {
   }
 
   app.innerHTML = html;
+  classificationUI.afterRender();
+  if (restoreInput && !focusMain && !focusRecur) {
+    const field = document.getElementById(restoreInput.id);
+    field?.focus(); field?.setSelectionRange(restoreInput.start, restoreInput.end);
+  }
 
   // 头部可拖动
   const header = app.querySelector(".header");
@@ -559,6 +582,7 @@ function onDragStart(e) {
 
 /* 事件委托 */
 app.addEventListener("click", (e) => {
+  if (e.target.closest('[data-class-ui]')) return;
   const link = e.target.closest("a[data-link]");
   if (link) { e.preventDefault(); openExternal(link.dataset.link); return; }
 
@@ -615,6 +639,7 @@ app.addEventListener("input", (e) => {
   }
 });
 app.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
   if (e.key === "Enter" && !e.shiftKey) {
     if (e.target.id === "main-input") { e.preventDefault(); commitMain(); }
     else if (e.target.id === "recur-input") { e.preventDefault(); commitRecur(); }
@@ -628,22 +653,30 @@ app.addEventListener("keydown", (e) => {
 function commitMain() {
   const t = draft.trim();
   if (!t) return;
+  const parsed = parseClassification(t);
+  let savedTask;
   if (composerEditId) {
-    updateItem(composerEditId, composerEditDay, t, undefined);
+    if (!parsed.title) { classificationUI.showNotice('请填写任务标题'); return; }
+    savedTask = state.itemsByDay[composerEditDay].find(it => it.id === composerEditId);
+    if (!savedTask) { cancelEdit(); return; }
+    Object.assign(savedTask, resolveClassification(state, parsed.tokens));
+    updateItem(composerEditId, composerEditDay, parsed.title, undefined);
     composerEditId = null; composerEditDay = null;
   } else {
-    const { day, time, title } = parseQuickInput(t, state.selectedDay);
-    if (!title) return;
-    addItem(title, day, time);
+    const { day, time, title } = parseQuickInput(parsed.title, state.selectedDay);
+    if (!title) { classificationUI.showNotice('请填写任务标题'); return; }
+    savedTask = addItem(title, day, time, resolveClassification(state, parsed.tokens));
     if (day !== state.selectedDay) state.selectedDay = day;
   }
   draft = ""; focusMain = true; render();
+  save();
+  if (savedTask && !classificationUI.filtered(savedTask)) classificationUI.showNotice('任务已保存，当前筛选未包含它', true);
 }
 function startEdit(id, day) {
   const it = state.itemsByDay[day].find((i) => i.id === id);
   if (!it) return;
   state.selectedDay = day;
-  composerEditId = id; composerEditDay = day; draft = it.title; focusMain = true;
+  composerEditId = id; composerEditDay = day; draft = editText(state, it); focusMain = true;
   render();
 }
 function cancelEdit() {
@@ -652,19 +685,28 @@ function cancelEdit() {
 function commitRecur() {
   const t = recurDraft.trim();
   if (!t) return;
-  if (recurEditId) { updateRecurringTitle(recurEditId, t); recurEditId = null; }
+  const classified = parseClassification(t);
+  let savedTask;
+  if (!classified.title) { classificationUI.showNotice('请填写任务标题'); return; }
+  if (recurEditId) {
+    savedTask = state.recurringItems.find(it => it.id === recurEditId);
+    if (savedTask) { Object.assign(savedTask, resolveClassification(state, classified.tokens)); updateRecurringTitle(recurEditId, classified.title); }
+    recurEditId = null;
+  }
   else {
-    const parsed = parseTime(t);
+    const parsed = parseTime(classified.title);
     const time = parsed ? parsed.time : null;
-    const title = parsed ? t.replace(parsed.match, " ").replace(/\s+/g, " ").trim() : t;
-    if (title) addRecurring(title, time);
+    const title = parsed ? classified.title.replace(parsed.match, " ").replace(/\s+/g, " ").trim() : classified.title;
+    if (!title) { classificationUI.showNotice('请填写任务标题'); return; }
+    savedTask = addRecurring(title, time, resolveClassification(state, classified.tokens));
   }
   recurDraft = ""; focusRecur = true; render();
+  if (savedTask && !classificationUI.filtered(savedTask)) classificationUI.showNotice('任务已保存，当前筛选未包含它', true);
 }
 function startRecurEdit(id) {
   const it = state.recurringItems.find((i) => i.id === id);
   if (!it) return;
-  recurringComposerOpen = true; recurEditId = id; recurDraft = it.title; focusRecur = true;
+  recurringComposerOpen = true; recurEditId = id; recurDraft = editText(state, it); focusRecur = true;
   render();
 }
 
@@ -690,6 +732,7 @@ function openRowMenu(id, day, anchorEl) {
   menu.innerHTML =
     `<button data-m="edit">${ICONS.pencil}<span>编辑</span></button>` +
     `<button data-m="detail">${ICONS.note}<span>${it.detail ? "编辑描述" : "添加描述"}</span></button>` +
+    `<button data-m="categories">#<span>项目与标签</span></button>` +
     `<button data-m="pin">${ICONS.repeat}<span>设为每天</span></button>` +
     `<div class="sep"></div>` +
     others.map((d) => `<button data-m="move:${d}">${ICONS.arrowRight}<span>移到${DAY_TITLE[d]}</span></button>`).join("") +
@@ -713,6 +756,7 @@ function openRowMenu(id, day, anchorEl) {
     closeMenu();
     if (m === "edit") startEdit(id, day);
     else if (m === "detail") openDetailEditor(id, day);
+    else if (m === "categories") classificationUI.openTaskCategories(it);
     else if (m === "pin") { pinAsRecurring(id, day); render(); }
     else if (m === "del") { deleteItem(id, day); render(); }
     else if (m.startsWith("move:")) { moveItem(id, day, m.slice(5)); render(); }
@@ -731,6 +775,7 @@ function openDetailEditor(id, day) {
     <div class="composer sm"><input id="de-title" value="${esc(it.title)}"/></div></div>
     <div><div style="font-size:11px;color:var(--text-secondary);margin-bottom:5px">描述</div>
     <div class="memo"><textarea id="de-detail" style="border-top:none">${esc(it.detail)}</textarea></div></div>
+    ${classificationUI.metadataFields(it)}
     <div class="set-row"><button class="link-btn" data-de="cancel">取消</button>
     <button class="link-btn" style="color:var(--accent);font-weight:600" data-de="save">保存详情</button></div>
   </div>`;
@@ -741,6 +786,8 @@ function openDetailEditor(id, day) {
     if (!b) return;
     if (b.dataset.de === "cancel") overlay.remove();
     else {
+      if (!overlay.querySelector("#de-title").value.trim()) return;
+      Object.assign(it, classificationUI.readMetadata(overlay));
       updateItem(id, day, overlay.querySelector("#de-title").value, overlay.querySelector("#de-detail").value);
       overlay.remove();
       render();
@@ -777,6 +824,7 @@ function openSettings() {
         <button class="link-btn" data-s="resetBg" ${s.customBg ? "" : 'style="opacity:.45"'}>恢复默认</button>
       </div>
     </div>
+    <button class="data-btn" data-s="categories"><span>项目与标签</span><span aria-hidden="true">›</span></button>
     <div>
       <div class="set-row"><span>透明度</span><span style="color:var(--text-secondary)">${Math.round(s.opacity * 100)}%</span></div>
       <input type="range" id="op-range" min="0.2" max="0.95" step="0.01" value="${s.opacity}"/>
@@ -788,6 +836,7 @@ function openSettings() {
     <div style="font-size:11px;color:var(--text-secondary);line-height:1.6">
       💡 全局快捷键 <b>${navigator.platform.includes("Mac") ? "⌘⇧Space" : "Ctrl+Shift+Space"}</b> 可在任意应用中唤起并聚焦输入框，快速记一笔。<br>
       ⏰ 输入「明天 15:00 开会」会自动识别日期与提醒时间。<br>
+      输入 <b>#标签</b> 或 <b>+项目</b> 可分类，方向键选择、Tab / Enter 补全。<br>
       🖱️ 开启鼠标穿透后浮窗不再挡点击，可从<b>托盘菜单「切换鼠标穿透」</b>关回来。
     </div>
     <div class="set-row" style="justify-content:flex-end"><button class="link-btn" data-s="close">完成</button></div>
@@ -828,6 +877,7 @@ function openSettings() {
       }
       else if (key === "autostart") { toggleAutostart(sw); return; }
       else if (key === "export") { exportBackup(); return; }
+      else if (key === "categories") { overlay.remove(); classificationUI.openManager(); return; }
       else if (key === "import") { importBackup(overlay); return; }
       else if (key === "close") { overlay.remove(); }
       save(); applyWindowChrome(); render();
@@ -877,22 +927,17 @@ async function importBackup(overlay) {
     const content = await TAURI.core.invoke("import_data");
     if (!content) return;
     const parsed = JSON.parse(content);
-    if (!parsed || !parsed.itemsByDay) return;
-    const base = defaultState();
-    state = {
-      ...base,
-      ...parsed,
-      itemsByDay: { ...base.itemsByDay, ...(parsed.itemsByDay || {}) },
-      settings: { ...base.settings, ...(parsed.settings || {}) },
-      memo: { ...base.memo, ...(parsed.memo || {}) },
-      recurringItems: parsed.recurringItems || [],
-    };
+    const imported = normalizeSnapshot(parsed, defaultState());
+    localStorage.setItem(STORAGE_KEY + '/before-import', JSON.stringify(state));
+    state = imported;
+    classificationUI.filters.project = ''; classificationUI.filters.tags = [];
+    draft = ''; recurDraft = ''; composerEditId = null; composerEditDay = null; recurEditId = null;
     if (isWindows && state.settings.showOnDesktop) state.settings.alwaysOnTop = false;
     save();
     overlay?.remove();
     applyWindowChrome();
     render();
-  } catch (e) {}
+  } catch (e) { classificationUI.showNotice('导入失败：' + e.message); }
 }
 
 function hexToRgb(hex) {
@@ -1028,3 +1073,4 @@ applyWindowChrome();
 setInterval(() => render(), 5 * 60 * 1000);
 setInterval(checkReminders, 30 * 1000);
 checkReminders();
+if (startupNotice) classificationUI.showNotice(startupNotice);

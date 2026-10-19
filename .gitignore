@@ -14,3 +14,6 @@ legacy-macos-swift/.build/
 
 # 工具临时目录
 .superpowers/
+# Browser verification artifacts
+test-results/
+playwright-report/
