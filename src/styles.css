@@ -18,6 +18,8 @@
   --green: #29ab56;
   --shadow: rgba(20, 40, 80, 0.18);
   --opacity: 0.78;
+  --panel-inset: 12px;
+  --panel-radius: 26px;
 }
 
 html[data-theme="dark"] {
@@ -78,8 +80,26 @@ body {
 
 .panel {
   position: absolute;
-  inset: 6px;
-  border-radius: 26px;
+  inset: var(--panel-inset);
+  border-radius: var(--panel-radius);
+  isolation: isolate;
+  border: 1px solid rgba(var(--border), var(--border-alpha));
+  /* The entire rounded shadow fits inside the transparent window gutter. */
+  box-shadow: 0 2px 6px var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  /* Clip the filtered surface without clipping the panel's outer shadow. */
+  clip-path: inset(0 round var(--panel-radius));
   background: linear-gradient(
     145deg,
     rgba(var(--panel-top), var(--opacity)),
@@ -87,11 +107,10 @@ body {
   );
   -webkit-backdrop-filter: blur(26px) saturate(1.4);
   backdrop-filter: blur(26px) saturate(1.4);
-  border: 1px solid rgba(var(--border), var(--border-alpha));
-  box-shadow: 0 18px 48px var(--shadow);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+}
+
+html[data-shadow="off"] .panel {
+  box-shadow: none;
 }
 
 #app {
@@ -476,7 +495,9 @@ button {
 /* ---------- 设置面板 ---------- */
 .overlay {
   position: absolute;
-  inset: 0;
+  inset: var(--panel-inset);
+  border-radius: var(--panel-radius);
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.12);
   z-index: 50;
   display: flex;
@@ -486,7 +507,7 @@ button {
 .settings {
   margin-top: 50px;
   width: 270px;
-  max-width: calc(100vw - 28px);
+  max-width: calc(100% - 28px);
   max-height: calc(100% - 70px);
   overflow-y: auto;
   border-radius: 18px;
@@ -741,7 +762,7 @@ input[type="color"] {
 .category-name:focus { border-color: var(--accent); }
 .category-name[aria-invalid="true"] { border-color: #d63c49; }
 .category-entry-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; font-size: 10px; color: var(--text-secondary); }
-.category-palette { display: flex; gap: 3px; }
+.category-palette { display: flex; flex-wrap: wrap; max-width: 100%; gap: 3px; }
 .palette-swatch { width: 14px; height: 14px; border-radius: 50%; background: var(--category-color); border: 1px solid rgba(255,255,255,.5); }
 .palette-swatch:hover { outline: 1px solid var(--text); }
 .category-empty { padding: 24px 0; text-align: center; font-size: 13px; }

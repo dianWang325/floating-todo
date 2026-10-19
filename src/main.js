@@ -107,6 +107,7 @@ function defaultState() {
       customBg: null,
       memoEnabled: false,
       clickThrough: false,
+      shadowEnabled: true,
     },
     memo: { text: "", expanded: false },
     lastActiveDate: todayStr(),
@@ -395,6 +396,7 @@ function applyWindowMode() {
 function applyWindowChrome() {
   const root = document.documentElement;
   root.dataset.theme = state.settings.appearance;
+  root.dataset.shadow = state.settings.shadowEnabled ? "on" : "off";
   root.style.setProperty("--opacity", state.settings.opacity);
   if (state.settings.customBg) {
     root.style.setProperty("--panel-top", state.settings.customBg);
@@ -957,6 +959,7 @@ function openSettings() {
   const bgHex = s.customBg ? rgbToHex(s.customBg) : "#dceaff";
   overlay.innerHTML = `<div class="settings">
     <h2>小组件设置</h2>
+    <div class="set-row"><span>窗口阴影</span><button type="button" class="switch ${s.shadowEnabled ? "on" : ""}" data-s="shadowEnabled" role="switch" aria-checked="${!!s.shadowEnabled}" aria-label="窗口阴影"></button></div>
     <div class="set-row"><span>始终置顶</span><div class="switch ${s.alwaysOnTop ? "on" : ""}" data-s="alwaysOnTop"></div></div>
     ${isWindows ? `<div class="set-row"><span>固定在桌面（Win+D 后仍显示）</span><div class="switch ${s.showOnDesktop ? "on" : ""}" data-s="showOnDesktop"></div></div>` : ""}
     <div class="set-row"><span>鼠标穿透（点击落到下层）</span><div class="switch ${s.clickThrough ? "on" : ""}" data-s="clickThrough"></div></div>
@@ -1011,6 +1014,11 @@ function openSettings() {
         if (state.settings.showOnDesktop) state.settings.alwaysOnTop = false;
         sw.classList.toggle("on", state.settings.showOnDesktop);
         overlay.querySelector('[data-s="alwaysOnTop"]')?.classList.toggle("on", state.settings.alwaysOnTop);
+      }
+      else if (key === "shadowEnabled") {
+        state.settings.shadowEnabled = !state.settings.shadowEnabled;
+        sw.classList.toggle("on", state.settings.shadowEnabled);
+        sw.setAttribute("aria-checked", String(state.settings.shadowEnabled));
       }
       else if (key === "memoEnabled") {
         state.settings.memoEnabled = !state.settings.memoEnabled;
