@@ -2,6 +2,7 @@
 import { SCHEMA_VERSION, normalizeSnapshot, parseClassification, resolveClassification, editText } from './classification.js';
 import { createClassificationUI } from './classification-ui.js';
 import { reorderVisibleItems } from './todo-order.js';
+import { createWindowController } from './window-controller.js';
 
 const TAURI = window.__TAURI__;
 const appWindow = TAURI?.window?.getCurrentWindow?.();
@@ -348,6 +349,11 @@ const ICONS = {
 
 const app = document.getElementById("app");
 const classificationUI = createClassificationUI({ getState: () => state, save, render, openSettings });
+const windowUI = createWindowController({
+  api: TAURI?.window,
+  onChange: () => { updateCompact(false); render(); },
+  onError: (error) => { console.error('Failed to change floating window', error); classificationUI.showNotice('窗口切换失败，请重试'); },
+});
 let compact = false;
 let activeMenu = null; // { id, day, kind }
 let appliedWindowMode = null;
@@ -455,10 +461,16 @@ function render() {
   // Re-rendering cancels an unfinished drag before replacing its DOM.
   finishTodoDrag(false, false);
   const oldInput = document.activeElement;
-  const restoreInput = oldInput?.matches?.('#main-input, #recur-input, #memo-input')
+  const restoreInput = oldInput?.matches?.('#main-input, #quick-input, #recur-input, #memo-input')
     ? { id: oldInput.id, start: oldInput.selectionStart, end: oldInput.selectionEnd } : null;
   rollOverIfNeeded();
   applyWindowChrome();
+  document.documentElement.dataset.windowMode = windowUI.mode;
+  if (!windowUI.transitioning && app.querySelector('.list')) listScrollTop = app.querySelector('.list').scrollTop;
+  if (windowUI.floating) {
+    renderFloating(restoreInput);
+    return;
+  }
 
   const day = compact ? "today" : state.selectedDay;
   const recurring = state.recurringItems.filter(classificationUI.filtered);
@@ -473,7 +485,7 @@ function render() {
     html += `<div class="header">
       <div class="titles"><h1>悬浮待办</h1><p>${sub}</p></div>
       <div class="spacer"></div>
-      <div class="count-pill ${cnt === 0 ? "zero" : ""}">${cnt}</div>
+      <button class="count-pill ${cnt === 0 ? "zero" : ""}" data-act="collapse" title="收起为悬浮栏" aria-label="${cnt} 件待办，收起为悬浮栏">${cnt > 99 ? '99+' : cnt}</button>
       <button class="icon-btn" data-act="settings" title="设置">${ICONS.gear}</button>
     </div>`;
 
@@ -547,6 +559,7 @@ function render() {
   }
 
   app.innerHTML = html;
+  if (app.querySelector('.list')) app.querySelector('.list').scrollTop = listScrollTop;
   classificationUI.afterRender();
   if (restoreInput && !focusMain && !focusRecur) {
     const field = document.getElementById(restoreInput.id);
@@ -580,9 +593,66 @@ let recurringComposerOpen = false;
 let recurEditId = null;
 let focusMain = false;
 let focusRecur = false;
+let quickDraft = '';
+let quickDay = state.selectedDay;
+let quickError = '';
+let quickMessage = '';
+let listScrollTop = 0;
+
+function renderFloating(restoreInput) {
+  const count = incompleteCount();
+  const capturing = windowUI.mode === 'quick';
+  app.innerHTML = `<div class="mini-bar" aria-label="悬浮待办栏">
+    <span class="mini-grip" title="拖动悬浮栏" aria-hidden="true">⠿</span>
+    <button class="mini-count ${count === 0 ? 'zero' : ''}" data-act="expand" title="展开待办面板" aria-label="${DAY_TITLE[state.selectedDay]} ${count} 件待办，展开完整面板"><span>${DAY_TITLE[state.selectedDay]}</span><strong>${count > 99 ? '99+' : count}</strong></button>
+    <span class="mini-divider" aria-hidden="true"></span>
+    <button class="mini-add" data-act="quick-toggle" title="快速新增待办" aria-label="快速新增待办" aria-expanded="${capturing}">${ICONS.plus}</button>
+    <span class="mini-sr-only" role="status">${esc(quickMessage)}</span>
+  </div>${capturing ? `<section class="quick-capture" aria-label="快速新增待办">
+    <div class="quick-heading"><span>记下一件事</span><button class="icon-btn sm" data-act="quick-close" aria-label="收起输入框" title="收起并保留草稿">${ICONS.x}</button></div>
+    <div class="composer quick-composer"><input id="quick-input" placeholder="接下来要做什么？" value="${esc(quickDraft)}" /></div>
+    <div class="quick-error" role="alert" ${quickError ? '' : 'hidden'}>${esc(quickError)}</div>
+    <div class="quick-footer"><select id="quick-day" aria-label="新待办的日期">${DAYS.map(day => `<option value="${day}" ${day === quickDay ? 'selected' : ''}>${DAY_TITLE[day]}</option>`).join('')}</select><span>Enter 添加</span><button class="send" data-act="quick-submit" aria-label="保存待办" ${quickDraft.trim() ? '' : 'disabled'}>${ICONS.arrowUp}</button></div>
+  </section>` : ''}`;
+  app.querySelector('.mini-bar').addEventListener('mousedown', onDragStart);
+  classificationUI.afterRender();
+  if (capturing && restoreInput?.id === 'quick-input') {
+    const field = document.getElementById('quick-input');
+    field.focus(); field.setSelectionRange(restoreInput.start, restoreInput.end);
+  }
+}
+
+async function collapseWindow() {
+  if (app.querySelector('.list')) listScrollTop = app.querySelector('.list').scrollTop;
+  closeMenu();
+  classificationUI.closeAutocomplete();
+  document.querySelector('.classification-notice')?.remove();
+  if (await windowUI.setMode('mini')) app.querySelector('.mini-count')?.focus({ preventScroll: true });
+}
+
+async function openQuickCapture() {
+  if (!quickDraft.trim()) quickDay = state.selectedDay;
+  quickError = ''; quickMessage = '';
+  if (await windowUI.setMode('quick')) document.getElementById('quick-input')?.focus();
+}
+
+async function closeQuickCapture() {
+  classificationUI.closeAutocomplete();
+  if (await windowUI.setMode('mini')) app.querySelector('.mini-add')?.focus({ preventScroll: true });
+}
+
+async function commitQuick() {
+  if (!quickDraft.trim() || classificationUI.isComposing()) return;
+  const parsed = parseClassification(quickDraft.trim());
+  const { day, time, title } = parseQuickInput(parsed.title, quickDay);
+  if (!title) { quickError = '请填写任务标题'; render(); return; }
+  addItem(title, day, time, resolveClassification(state, parsed.tokens));
+  quickDraft = ''; quickError = ''; quickMessage = `已添加到${DAY_TITLE[day]}`;
+  await closeQuickCapture();
+}
 
 function onDragStart(e) {
-  if (e.target.closest("button")) return;
+  if (e.button !== 0 || e.target.closest("button, input, select, textarea")) return;
   appWindow?.startDragging().catch(() => {});
 }
 
@@ -747,7 +817,7 @@ app.addEventListener("click", (e) => {
   const day = el.dataset.day;
 
   switch (act) {
-    case "day": state.selectedDay = day; save(); render(); break;
+    case "day": state.selectedDay = day; listScrollTop = 0; app.querySelector('.list')?.scrollTo(0, 0); save(); render(); break;
     case "toggle": {
       const wasOpen = !state.itemsByDay[day].find((i) => i.id === id)?.completed;
       toggleItem(id, day);
@@ -773,6 +843,10 @@ app.addEventListener("click", (e) => {
     case "raddtoggle": recurringComposerOpen = !recurringComposerOpen; focusRecur = recurringComposerOpen; render(); break;
     case "raddsubmit": commitRecur(); break;
     case "expand": expandWindow(); break;
+    case "collapse": collapseWindow(); break;
+    case "quick-toggle": windowUI.mode === 'quick' ? closeQuickCapture() : openQuickCapture(); break;
+    case "quick-close": closeQuickCapture(); break;
+    case "quick-submit": commitQuick(); break;
     case "settings": openSettings(); break;
     case "memotoggle": state.memo.expanded = !state.memo.expanded; save(); render(); break;
     case "menu": openRowMenu(id, day, el); break;
@@ -781,7 +855,11 @@ app.addEventListener("click", (e) => {
 
 /* 输入框事件（委托 input/keydown） */
 app.addEventListener("input", (e) => {
-  if (e.target.id === "main-input") {
+  if (e.target.id === 'quick-input') {
+    quickDraft = e.target.value; quickError = '';
+    app.querySelector('[data-act="quick-submit"]').disabled = !quickDraft.trim();
+    app.querySelector('.quick-error').hidden = true;
+  } else if (e.target.id === "main-input") {
     draft = e.target.value;
     const send = app.querySelector('[data-act="submit"]');
     if (send) send.classList.toggle("off", !draft.trim());
@@ -792,16 +870,22 @@ app.addEventListener("input", (e) => {
     save();
   }
 });
+app.addEventListener('change', (e) => { if (e.target.id === 'quick-day') quickDay = e.target.value; });
+app.addEventListener('scroll', (e) => {
+  if (!windowUI.transitioning && e.target.matches?.('.list')) listScrollTop = e.target.scrollTop;
+}, true);
 app.addEventListener("keydown", (e) => {
   if (e.isComposing || e.keyCode === 229) return;
   if (e.key === "Enter" && !e.shiftKey) {
-    if (e.target.id === "main-input") { e.preventDefault(); commitMain(); }
+    if (e.target.id === 'quick-input') { e.preventDefault(); commitQuick(); }
+    else if (e.target.id === "main-input") { e.preventDefault(); commitMain(); }
     else if (e.target.id === "recur-input") { e.preventDefault(); commitRecur(); }
   }
   if (e.key === "Escape" && e.target.id === "main-input") {
     if (composerEditId) cancelEdit();
-    else { draft = ""; appWindow?.hide().catch(() => {}); }
+    else collapseWindow();
   }
+  if (e.key === 'Escape' && windowUI.mode === 'quick') { e.preventDefault(); closeQuickCapture(); }
 });
 
 function commitMain() {
@@ -1174,32 +1258,45 @@ async function checkReminders() {
 
 /* ---------------- 窗口尺寸 / 缩放 ---------------- */
 
-function expandWindow() {
-  if (!appWindow || !TAURI?.window?.LogicalSize) return;
-  appWindow.setSize(new TAURI.window.LogicalSize(340, 560)).catch(() => {});
+async function expandWindow() {
+  classificationUI.closeAutocomplete();
+  if (await windowUI.setMode('panel')) app.querySelector('[data-act="collapse"]')?.focus({ preventScroll: true });
 }
 
 document.querySelectorAll(".resize").forEach((h) => {
+  if (h.dataset.dir === 'SouthWest') { windowUI.attachResize(h); return; }
   h.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || windowUI.floating || windowUI.transitioning) return;
     e.preventDefault();
     appWindow?.startResizeDragging(h.dataset.dir).catch(() => {});
   });
 });
 
-function updateCompact() {
+function updateCompact(redraw = true) {
+  windowUI.observeSize();
   const w = window.innerWidth, hh = window.innerHeight;
-  const c = w < 300 || hh < 280;
-  if (c !== compact) { compact = c; document.documentElement.classList.toggle("compact", c); render(); }
+  const c = !windowUI.floating && (w < 300 || hh < 280);
+  if (c !== compact) { compact = c; document.documentElement.classList.toggle("compact", c); if (redraw) render(); }
   else { document.documentElement.classList.toggle("compact", c); }
 }
-window.addEventListener("resize", updateCompact);
+window.addEventListener("resize", () => updateCompact());
+
+document.addEventListener('pointerdown', (event) => {
+  if (windowUI.mode === 'quick' && !event.target.closest('.quick-capture, .mini-bar, .category-suggestions')) closeQuickCapture();
+});
+window.addEventListener('blur', () => {
+  setTimeout(() => {
+    if (windowUI.mode === 'quick' && !windowUI.transitioning && !document.hasFocus() && document.activeElement?.tagName !== 'SELECT') closeQuickCapture();
+  }, 80);
+});
 
 /* ---------------- 全局快捷键：快速捕获 ---------------- */
 
-TAURI?.event?.listen?.("quick-capture", () => {
+TAURI?.event?.listen?.("quick-capture", async () => {
   closeMenu();
   document.querySelector(".overlay")?.remove();
-  if (compact) expandWindow();
+  if (windowUI.floating) { await openQuickCapture(); return; }
+  if (compact) await expandWindow();
   focusMain = true;
   render();
   setTimeout(() => {

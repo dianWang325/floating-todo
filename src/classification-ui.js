@@ -3,7 +3,7 @@ import { PALETTE, activeToken, suggestions, categoryToken, parseClassification, 
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dot = (color) => `<span class="tag-dot" style="--category-color:${color}" aria-hidden="true"></span>`;
 const label = (kind) => kind === 'projects' ? '项目' : '标签';
-const isComposer = (el) => el?.matches?.('#main-input, #recur-input');
+const isComposer = (el) => el?.matches?.('#main-input, #quick-input, #recur-input');
 
 export function createClassificationUI({ getState, save, render, openSettings }) {
   const filters = { project: '', tags: [] };
@@ -214,7 +214,7 @@ export function createClassificationUI({ getState, save, render, openSettings })
   document.addEventListener('focusin', e => { if (!isComposer(e.target) && !e.target.closest('.category-suggestions')) closeAutocomplete(); });
   function afterRender() {
     closeAutocomplete();
-    document.querySelectorAll('#main-input, #recur-input').forEach(field => { field.setAttribute('aria-label', field.id === 'main-input' ? '待办输入，#标签，+项目' : '每天待办输入，#标签，+项目'); updatePreview(field); });
+    document.querySelectorAll('#main-input, #quick-input, #recur-input').forEach(field => { field.setAttribute('aria-label', field.id === 'recur-input' ? '每天待办输入，#标签，+项目' : '待办输入，#标签，+项目'); updatePreview(field); });
   }
   return { filters, filtered, hasFilters, clearFilters, filterBar, rowStyle, rowMetadata, metadataFields, readMetadata, openTaskCategories, openManager, showNotice, afterRender, closeAutocomplete, isComposing: () => composing };
 }
