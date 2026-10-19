@@ -19,10 +19,17 @@ $previousProfile = $env:FLOATING_TODO_SMOKE_PROFILE
 try {
     foreach ($setting in $settings.GetEnumerator()) {
         $path = Join-Path $policyRoot $setting.Key
-        New-Item -Path $path -Force | Out-Null
+        if (-not (Test-Path -LiteralPath $path)) {
+            New-Item -Path $path -Force | Out-Null
+        }
         $key = Get-Item -LiteralPath $path
         $exists = $key.GetValueNames() -contains $appName
-        $previous += @{ Path = $path; Exists = $exists; Value = $key.GetValue($appName) }
+        $previous += @{
+            Path = $path
+            Exists = $exists
+            Value = $key.GetValue($appName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            Kind = if ($exists) { $key.GetValueKind($appName) } else { 'String' }
+        }
         New-ItemProperty -LiteralPath $path -Name $appName -Value $setting.Value -PropertyType String -Force | Out-Null
     }
     $env:FLOATING_TODO_SMOKE_PROFILE = $profile
@@ -32,7 +39,7 @@ try {
     $env:FLOATING_TODO_SMOKE_PROFILE = $previousProfile
     foreach ($setting in $previous) {
         if ($setting.Exists) {
-            Set-ItemProperty -LiteralPath $setting.Path -Name $appName -Value $setting.Value
+            New-ItemProperty -LiteralPath $setting.Path -Name $appName -Value $setting.Value -PropertyType $setting.Kind -Force | Out-Null
         } else {
             Remove-ItemProperty -LiteralPath $setting.Path -Name $appName
         }
