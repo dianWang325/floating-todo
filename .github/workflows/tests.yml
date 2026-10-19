@@ -41,6 +41,7 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
       - run: npm run tauri -- build --debug --no-bundle
       - run: ./tests/native-smoke.ps1 -Executable src-tauri/target/debug/floating-todo.exe
       - uses: actions/upload-artifact@v4

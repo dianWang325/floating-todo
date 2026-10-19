@@ -42,7 +42,7 @@ try {
   await page.waitForSelector('[data-act="collapse"]');
   await page.evaluate(async () => {
     const api = window.__TAURI__.window;
-    await api.getCurrentWindow().setPosition(new api.PhysicalPosition(80, 80));
+    await window.__TAURI__.core.invoke('set_window_screen_position', { x: 80, y: 80 });
     await api.getCurrentWindow().setFocus();
   });
   const original = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));

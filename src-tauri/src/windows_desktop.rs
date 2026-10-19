@@ -93,6 +93,18 @@ fn position_and_refresh(hwnd: HWND, position: POINT) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 
+/// Accept physical screen coordinates for both top-level and desktop child windows.
+pub fn set_screen_position(hwnd: HWND, x: i32, y: i32) -> Result<(), String> {
+    let mut position = POINT { x, y };
+    if unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } & WS_CHILD.0 as isize != 0 {
+        let parent = unsafe { GetParent(hwnd) }.map_err(|error| error.to_string())?;
+        if !unsafe { ScreenToClient(parent, &mut position) }.as_bool() {
+            return Err(windows::core::Error::from_win32().to_string());
+        }
+    }
+    position_and_refresh(hwnd, position)
+}
+
 fn restore_top_level(hwnd: HWND, style: isize, position: POINT) -> Result<(), String> {
     unsafe {
         let _ = SetParent(hwnd, None);
@@ -176,6 +188,64 @@ pub fn set_desktop_mode(hwnd: HWND, enabled: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE,
+    };
+
+    struct TestWindow(HWND);
+
+    impl Drop for TestWindow {
+        fn drop(&mut self) {
+            let _ = unsafe { DestroyWindow(self.0) };
+        }
+    }
+
+    #[test]
+    fn screen_position_handles_an_offset_parent_and_top_level_windows() {
+        let parent = TestWindow(unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                w!("position test"),
+                WS_POPUP,
+                100,
+                80,
+                300,
+                200,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+        });
+        let child = TestWindow(unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                w!("child test"),
+                WS_CHILD,
+                10,
+                20,
+                40,
+                40,
+                Some(parent.0),
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+        });
+        let origin = window_rect(parent.0).unwrap();
+        let target = (origin.left + 45, origin.top + 55);
+        set_screen_position(child.0, target.0, target.1).unwrap();
+        let actual = window_rect(child.0).unwrap();
+        assert_eq!((actual.left, actual.top), target);
+
+        set_screen_position(parent.0, 140, 120).unwrap();
+        let actual = window_rect(parent.0).unwrap();
+        assert_eq!((actual.left, actual.top), (140, 120));
+    }
 
     #[test]
     fn desktop_style_replaces_popup_with_child() {
