@@ -351,6 +351,7 @@ const app = document.getElementById("app");
 const classificationUI = createClassificationUI({ getState: () => state, save, render, openSettings });
 const windowUI = createWindowController({
   api: TAURI?.window,
+  moveToScreen: (x, y) => TAURI.core.invoke('set_window_screen_position', { x, y }),
   onChange: () => { updateCompact(false); render(); },
   onError: (error) => { console.error('Failed to change floating window', error); classificationUI.showNotice('窗口切换失败，请重试'); },
 });

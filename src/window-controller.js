@@ -1,6 +1,6 @@
 import { PANEL_MIN, PANEL_DEFAULT, BAR_SIZE, CAPTURE_SIZE, isCompact, anchoredBounds, southwestResize } from './window-layout.js';
 
-export function createWindowController({ api, onChange, onError }) {
+export function createWindowController({ api, moveToScreen, onChange, onError }) {
   const native = api?.getCurrentWindow?.();
   let mode = 'panel';
   let transitioning = false;
@@ -24,7 +24,7 @@ export function createWindowController({ api, onChange, onError }) {
   async function setBounds(bounds) {
     if (!native) return;
     await native.setSize(new api.PhysicalSize(bounds.width, bounds.height));
-    await native.setPosition(new api.PhysicalPosition(bounds.x, bounds.y));
+    await moveToScreen(bounds.x, bounds.y);
   }
 
   function releaseResize() {
@@ -98,18 +98,25 @@ export function createWindowController({ api, onChange, onError }) {
       } catch (error) { releaseResize(); onError(error); }
     });
     handle.addEventListener('pointermove', (event) => {
-      if (resize?.pointerId !== event.pointerId) return;
-      if (!(event.buttons & 1)) { releaseResize(); return; }
+      if (resize?.pointerId !== event.pointerId || resize.finishing) return;
+      if (!(event.buttons & 1)) { finishResize(event); return; }
       resize.pending = true;
       sampleResize(resize);
     });
-    handle.addEventListener('pointerup', releaseResize);
+    handle.addEventListener('pointerup', finishResize);
     handle.addEventListener('pointercancel', releaseResize);
-    handle.addEventListener('lostpointercapture', releaseResize);
+    handle.addEventListener('lostpointercapture', () => { if (!resize?.finishing) releaseResize(); });
     window.addEventListener('blur', releaseResize);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && resize) { event.preventDefault(); releaseResize(); }
     });
+  }
+
+  function finishResize(event) {
+    if (resize?.pointerId !== event.pointerId) return;
+    resize.finishing = true;
+    resize.pending = true;
+    sampleResize(resize);
   }
 
   function sampleResize(current) {
@@ -135,7 +142,10 @@ export function createWindowController({ api, onChange, onError }) {
           }
         }
       } catch (error) { releaseResize(); onError(error); }
-      finally { current.running = false; }
+      finally {
+        current.running = false;
+        if (resize === current && current.finishing) releaseResize();
+      }
     })();
   }
 

@@ -38,11 +38,21 @@ async function boot(page, { width = 340, height = 560, scale = 1, selectedDay = 
       startResizeDragging: async direction => { native.calls.push(['resize', direction]); },
     };
     window.__TAURI__ = {
-      core: { invoke: async () => {} },
+      core: { invoke: async (command, args) => {
+        if (command === 'set_window_screen_position') {
+          native.x = args.x; native.y = args.y; native.calls.push(['screenPosition', args.x, args.y]);
+        }
+      } },
       event: { listen: (name, cb) => { native.listeners[name] = cb; return Promise.resolve(() => {}); } },
       window: { getCurrentWindow: () => win, PhysicalSize, PhysicalPosition, LogicalSize,
         currentMonitor: async () => ({ workArea: { position: { x: -2000, y: 0 }, size: { width: 6000, height: 3000 } } }),
-        cursorPosition: async () => native.cursor,
+        cursorPosition: async () => {
+          if (native.pauseCursor) {
+            native.pauseCursor = false;
+            await new Promise(resolve => { native.resumeCursor = resolve; });
+          }
+          return native.cursor;
+        },
       },
     };
   }, { key: KEY, width, height, scale, selectedDay, taskCount });
@@ -62,6 +72,8 @@ test('native bar dimensions, right anchor and full geometry round-trip retain da
   await expect(page.locator('.mini-count strong')).toHaveText('1');
   expect(await page.evaluate(() => __native.resizable)).toBe(false);
   expect(await page.evaluate(() => __native.x + __native.width)).toBe(before.x + 600);
+  expect(await page.evaluate(() => __native.calls.some(call => call[0] === 'screenPosition'))).toBe(true);
+  expect(await page.evaluate(() => __native.calls.some(call => call[0] === 'position'))).toBe(false);
   await page.locator('.mini-count').click();
   await expect(page.locator('#main-input')).toHaveValue('尚未提交的草稿');
   await expect.poll(() => page.viewportSize()).toEqual({ width: 400, height: 650 });
@@ -176,6 +188,21 @@ test('captured southwest resize keeps compact after a single crossing and collap
   await page.locator('.mini-count').click();
   await expect.poll(() => page.viewportSize()).toEqual({ width: 340, height: 560 });
 });
+
+for (const cancel of [true, false]) {
+  test(`pending native drag sample ${cancel ? 'is cancelled by blur' : 'finishes after pointer release'}`, async ({ page }) => {
+    await boot(page);
+    await page.mouse.move(4, 556); await page.mouse.down();
+    await page.evaluate(() => { __native.pauseCursor = true; __native.cursor = { x: 1240, y: 160 }; });
+    await page.locator('.resize.sw').dispatchEvent('pointermove', { pointerId: 1, buttons: 1 });
+    await expect.poll(() => page.evaluate(() => typeof __native.resumeCursor)).toBe('function');
+    if (cancel) await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await page.mouse.up();
+    await page.evaluate(() => __native.resumeCursor());
+    await mode(page, cancel ? 'panel' : 'mini');
+    await expect.poll(() => page.viewportSize()).toEqual(cancel ? { width: 340, height: 560 } : { width: 188, height: 68 });
+  });
+}
 
 test('mini and quick layouts fit the window in both themes', async ({ page }, testInfo) => {
   await boot(page); await collapse(page);

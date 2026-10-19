@@ -76,6 +76,21 @@ fn set_desktop_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn set_window_screen_position(window: tauri::WebviewWindow, x: i32, y: i32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        windows_desktop::set_screen_position(hwnd, x, y)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .set_position(tauri::PhysicalPosition::new(x, y))
+            .map_err(|error| error.to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -97,7 +112,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             export_data,
             import_data,
-            set_desktop_mode
+            set_desktop_mode,
+            set_window_screen_position
         ])
         .setup(|app| {
             // macOS：作为状态栏小组件运行，不占用程序坞。

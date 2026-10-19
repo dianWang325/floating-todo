@@ -54,13 +54,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "悬浮待办 ${{ github.ref_name }}"
           releaseBody: "下载下方对应平台安装包。macOS 首次打开若提示「已损坏」或「身份不明的开发者」，请见 README 的安装说明。Windows 首次运行若被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可。"
-          releaseDraft: false
+          releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
       - name: Windows application smoke test
         if: matrix.platform == 'windows-latest'
-        run: npm run test:native -- src-tauri/target/release/floating-todo.exe
+        run: ./tests/native-smoke.ps1 -Executable src-tauri/target/release/floating-todo.exe
 
       - uses: actions/upload-artifact@v4
         if: always() && matrix.platform == 'windows-latest'
@@ -70,7 +70,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  rename-assets:
+  publish:
     needs: release
     runs-on: ubuntu-latest
     permissions:
@@ -88,3 +88,4 @@ jobs:
                     -f name="floating-todo${name}" && echo "renamed $name -> floating-todo${name}" ;;
             esac
           done
+          gh release edit "$tag" --repo "${{ github.repository }}" --draft=false

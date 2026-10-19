@@ -28,3 +28,26 @@ jobs:
           name: ui-test-results
           path: test-results/
           retention-days: 7
+
+  native-windows:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+      - run: npm run tauri -- build --debug --no-bundle
+      - run: ./tests/native-smoke.ps1 -Executable src-tauri/target/debug/floating-todo.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-native-smoke
+          path: test-results/native/
+          if-no-files-found: ignore
+          retention-days: 7

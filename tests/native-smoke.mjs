@@ -9,7 +9,7 @@ const executable = process.argv[2];
 if (!executable) throw new Error('Usage: npm run test:native -- <path-to-executable>');
 const output = resolve('test-results/native');
 await mkdir(output, { recursive: true });
-const profile = await mkdtemp(join(tmpdir(), 'floating-todo-smoke-'));
+const profile = process.env.FLOATING_TODO_SMOKE_PROFILE || await mkdtemp(join(tmpdir(), 'floating-todo-smoke-'));
 const child = spawn(resolve(executable), [], {
   windowsHide: true,
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9222', WEBVIEW2_USER_DATA_FOLDER: profile },
@@ -21,16 +21,17 @@ child.stderr.on('data', chunk => logs.push(chunk.toString()));
 let startupError;
 child.on('error', error => { startupError = error; });
 let browser;
+let page;
 try {
   const deadline = Date.now() + 60_000;
+  let connectionError;
   while (!browser && Date.now() < deadline) {
     if (startupError) throw startupError;
     if (child.exitCode !== null) throw new Error(`Application exited with code ${child.exitCode}`);
     try { browser = await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 2000 }); }
-    catch { await new Promise(resolve => setTimeout(resolve, 500)); }
+    catch (error) { connectionError = error; await new Promise(resolve => setTimeout(resolve, 500)); }
   }
-  if (!browser) throw new Error('WebView2 debugging endpoint did not become available');
-  let page;
+  if (!browser) throw new Error('WebView2 debugging endpoint did not become available', { cause: connectionError });
   while (!page && Date.now() < deadline) {
     page = browser.contexts().flatMap(context => context.pages()).find(candidate => /tauri\.localhost|tauri:\/\/localhost/.test(candidate.url()));
     if (!page) await new Promise(resolve => setTimeout(resolve, 250));
@@ -41,7 +42,7 @@ try {
   await page.waitForSelector('[data-act="collapse"]');
   await page.evaluate(async () => {
     const api = window.__TAURI__.window;
-    await api.getCurrentWindow().setPosition(new api.PhysicalPosition(80, 80));
+    await window.__TAURI__.core.invoke('set_window_screen_position', { x: 80, y: 80 });
     await api.getCurrentWindow().setFocus();
   });
   const original = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
@@ -62,6 +63,13 @@ try {
   await page.screenshot({ path: join(output, 'expanded.png'), omitBackground: true });
   assert.deepEqual(errors, []);
   console.log('PASS: native window collapse, quick capture, count update, and full-size restoration');
+} catch (error) {
+  logs.push(error.stack || String(error));
+  if (page) {
+    await page.screenshot({ path: join(output, 'failure.png'), omitBackground: true }).catch(() => {});
+    logs.push(await page.evaluate(() => JSON.stringify({ mode: document.documentElement.dataset.windowMode, width: innerWidth, height: innerHeight, text: document.body.innerText })).catch(() => 'Page unavailable'));
+  }
+  throw error;
 } finally {
   await writeFile(join(output, 'application.log'), logs.join(''), 'utf8');
   await browser?.close().catch(() => {});
