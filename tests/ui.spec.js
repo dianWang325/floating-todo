@@ -219,6 +219,8 @@ test('visual previews at reference size, normal size, settings, completion and c
   await page.screenshot({ path: output('projects-tags-default-size') });
   await page.locator('[data-act="settings"]').click(); await page.locator('[data-ap="dark"]').click(); await page.locator('[data-s="close"]').click();
   await page.screenshot({ path: output('projects-tags-dark') });
-  await page.setViewportSize({ width: 220, height: 180 }); await page.screenshot({ path: output('projects-tags-compact') });
+  await page.setViewportSize({ width: 220, height: 180 });
+  await expect(page.locator('html')).toHaveClass(/compact/);
+  await page.screenshot({ path: output('projects-tags-compact') });
   const overflow = await page.evaluate(() => document.querySelector('.panel').scrollWidth > document.querySelector('.panel').clientWidth); expect(overflow).toBe(false);
 });

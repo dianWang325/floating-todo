@@ -22,9 +22,10 @@ export function createClassificationUI({ getState, save, render, openSettings })
     cleanFilters();
     const project = getState().projects.find(p => p.id === filters.project);
     const projectTitle = project?.name || (filters.project === 'none' ? '无项目' : '全部项目');
+    const caret = '<span class="filter-caret" aria-hidden="true"><svg viewBox="0 0 10 6" width="9" height="6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 1.5 5 4.8 8.5 1.5"/></svg></span>';
     return `<div class="filter-bar" aria-label="分类筛选">
-      <button data-class-ui="filter-projects" class="filter-chip ${filters.project ? 'selected' : ''}" title="${esc(projectTitle)}">${project ? dot(project.color) : '<span>+</span>'}<span>${esc(projectTitle)}</span><span>⌄</span></button>
-      <button data-class-ui="filter-tags" class="filter-chip ${filters.tags.length ? 'selected' : ''}"><span>#</span><span>${filters.tags.length ? `标签 · ${filters.tags.length}` : '全部标签'}</span><span>⌄</span></button>
+      <button data-class-ui="filter-projects" class="filter-chip ${filters.project ? 'selected' : ''}" title="${esc(projectTitle)}">${project ? dot(project.color) : '<span>+</span>'}<span>${esc(projectTitle)}</span>${caret}</button>
+      <button data-class-ui="filter-tags" class="filter-chip ${filters.tags.length ? 'selected' : ''}"><span>#</span><span>${filters.tags.length ? `标签 · ${filters.tags.length}` : '全部标签'}</span>${caret}</button>
       ${hasFilters() ? '<button data-class-ui="clear" class="filter-clear" aria-label="清除分类筛选" title="清除筛选">×</button>' : ''}
     </div>`;
   }
