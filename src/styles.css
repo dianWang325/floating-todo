@@ -1136,3 +1136,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   box-shadow: 0 4px 12px var(--shadow);
 }
 .sorting, .sorting * { cursor: grabbing !important; }
+
+/* Sync settings and recoverable conflict versions. */
+.sync-settings { max-height: calc(100vh - 24px); overflow: auto; }
+.sync-field { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; font-size: 12px; }
+.sync-field input, .sync-field textarea, .sync-field select { min-width: 0; width: 100%; box-sizing: border-box; border: 1px solid var(--border, #8885); border-radius: 7px; padding: 7px; background: var(--card-bg, #ffffff30); color: var(--text-primary, inherit); font: inherit; }
+.sync-field textarea { min-height: 100px; resize: vertical; }
+.sync-check { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 10px 0; }
+.sync-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.sync-help { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+.sync-status, .sync-error { font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sync-error { color: #cf554a; }
+.sync-conflict h3 { font-size: 13px; }
+.sync-version { border: 1px solid #8884; border-radius: 8px; padding: 9px; margin: 8px 0; font-size: 12px; }
+.sync-version pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 180px; overflow: auto; }

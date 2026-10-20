@@ -49,6 +49,7 @@ test('complete workflow: capture, dates, filters, rename, color, deletion, reloa
   expect(JSON.parse(exported).projects[0].name).toBe('网站升级');
   await page.evaluate(json => { window.__imported = json; }, exported);
   await page.locator('[data-s="import"]').click();
+  await page.locator('[data-import-confirm]').click();
   expect((await read(page)).projects[0].color).toBe('#4a9b74');
   await expect(page.locator('.row .title')).toHaveText('提交设计稿');
   expect(errors).toEqual([]);
@@ -146,8 +147,9 @@ test('old backup imports, invalid backup leaves state intact, migration snapshot
   expect((await read(page)).projects).toHaveLength(1);
   await page.evaluate(data => { window.__imported = JSON.stringify(data); }, old);
   await page.locator('[data-s="import"]').click();
-  expect((await read(page)).itemsByDay.today[0]).toMatchObject({ projectId: null, tagIds: [] });
-  await expect(page.locator('.row .title')).toHaveText('旧任务');
+  await page.locator('[data-import-confirm]').click();
+  expect((await read(page)).itemsByDay.today.find(t => t.id === 'legacy')).toMatchObject({ projectId: null, tagIds: [] });
+  await expect(page.locator('.row .title')).toHaveText(['新任务', '旧任务']);
 });
 
 test('light/dark and compact layouts keep controls and modals inside the window', async ({ page }) => {

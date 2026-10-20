@@ -36,9 +36,10 @@ test('shadow defaults on for old data, persists off across reload, export and im
   expect(await page.evaluate(() => JSON.parse(window.__backup).settings.shadowEnabled)).toBe(false);
   await page.getByRole('switch', { name: '窗口阴影' }).click();
   await page.evaluate(() => { window.__import = window.__backup; }); await page.locator('[data-s="import"]').click();
-  expect(await shadow(page)).toBe('none');
+  await page.locator('[data-import-confirm]').click();
+  await expect(page.locator('html')).toHaveAttribute('data-shadow', 'on');
   await settings(page); await page.evaluate(() => { window.__import = JSON.stringify(window.__legacyBackup); });
-  await page.locator('[data-s="import"]').click(); await expect(page.locator('html')).toHaveAttribute('data-shadow', 'on');
+  await page.locator('[data-s="import"]').click(); await page.locator('[data-import-confirm]').click(); await expect(page.locator('html')).toHaveAttribute('data-shadow', 'on');
 });
 
 test('rounded surface and overlays fit the transparent gutter in light/dark and compact layouts', async ({ page }) => {

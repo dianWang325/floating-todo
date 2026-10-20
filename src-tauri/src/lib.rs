@@ -4,6 +4,7 @@ use tauri::{
     AppHandle, Emitter, Manager,
 };
 use tauri_plugin_dialog::DialogExt;
+mod sync_storage;
 
 #[cfg(target_os = "windows")]
 mod windows_desktop;
@@ -110,6 +111,10 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            sync_storage::storage_load,
+            sync_storage::storage_save,
+            sync_storage::sync_set_password,
+            sync_storage::dav_request,
             export_data,
             import_data,
             set_desktop_mode,

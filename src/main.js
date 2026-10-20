@@ -3,6 +3,11 @@ import { SCHEMA_VERSION, normalizeSnapshot, parseClassification, resolveClassifi
 import { createClassificationUI } from './classification-ui.js';
 import { reorderVisibleItems } from './todo-order.js';
 import { createWindowController } from './window-controller.js';
+import { SyncStore } from './sync-store.js';
+import { dateInZone, shiftDate, setTaskOrder } from './sync-model.js';
+import { openSyncSettings, confirmImport } from './sync-ui.js';
+let syncStore = null;
+let memoSaveTimer = null;
 
 const TAURI = window.__TAURI__;
 const appWindow = TAURI?.window?.getCurrentWindow?.();
@@ -27,33 +32,19 @@ const uid = () =>
   crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
 
 function todayStr(d = new Date()) {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  return `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`;
+  return dateInZone(syncStore?.doc?.sync.timeZone || 'Asia/Shanghai', d);
 }
 
-function dayDelta(fromStr, toStr) {
-  const [fy, fm, fd] = fromStr.split("-").map(Number);
-  const [ty, tm, td] = toStr.split("-").map(Number);
-  const a = new Date(fy, fm - 1, fd);
-  const b = new Date(ty, tm - 1, td);
-  return Math.round((b - a) / 86400000);
-}
 
 function dateLabel(offset) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  const [, month, day] = shiftDate(todayStr(), offset).split('-').map(Number);
+  return `${month}月${day}日`;
 }
 
 const pad = (n) => String(n).padStart(2, "0");
-function yesterdayStr() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return todayStr(d);
-}
+function yesterdayStr() { return shiftDate(todayStr(), -1); }
 function nowHHMM() {
-  const d = new Date();
-  return pad(d.getHours()) + ":" + pad(d.getMinutes());
+  return new Intl.DateTimeFormat('en-GB', { timeZone: syncStore?.doc?.sync.timeZone || 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
 }
 
 /* 从输入里解析时间，如 15:00 / 下午3点半 / 晚上8点30 / 9点 */
@@ -137,49 +128,28 @@ function load() {
   return state;
 }
 
+const legacyRaw = localStorage.getItem(STORAGE_KEY);
 let state = load();
-
+syncStore = new SyncStore({
+  invoke: (name, args) => TAURI.core.invoke(name, args),
+  native: !!window.__TAURI_INTERNALS__,
+  onChange: view => { state = view; render(); },
+  onStatus: () => window.dispatchEvent(new Event('todo-sync-status')),
+});
+try {
+  state = await syncStore.init(state, legacyRaw);
+} catch (error) {
+  document.getElementById('app').textContent = `本地数据库无法打开，已停止写入以保留数据。请重启或恢复备份。${error}`;
+  throw error;
+}
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  clearTimeout(memoSaveTimer); memoSaveTimer = null;
+  syncStore.commit(state);
 }
 
-/* ---------------- 跨天滚动 ---------------- */
-
+/* 跨天只更新展示，历史完成状态和删除记录留在数据库中。 */
 function rollOverIfNeeded() {
-  const today = todayStr();
-  const delta = dayDelta(state.lastActiveDate, today);
-  if (delta <= 0) return;
-
-  const offset = { today: 0, tomorrow: 1, dayAfterTomorrow: 2 };
-  const result = { today: [], tomorrow: [], dayAfterTomorrow: [] };
-  let overdue = [];
-
-  for (const day of DAYS) {
-    const items = state.itemsByDay[day] || [];
-    const newOffset = offset[day] - delta;
-    if (newOffset >= 0) {
-      const target = DAYS.find((d) => offset[d] === newOffset);
-      result[target].push(...items);
-    } else {
-      overdue.push(...items.filter((it) => !it.completed));
-    }
-  }
-  // 过期未完成顺延到今天底部
-  result.today = [...result.today, ...overdue];
-  // 新的一天，今天的待办重置提醒标记
-  result.today = result.today.map((it) => ({ ...it, notified: false }));
-
-  // 常驻待办每天重置完成状态与提醒；中断超过一天则连胜清零
-  const y = yesterdayStr();
-  state.recurringItems = state.recurringItems.map((it) => {
-    const reset = { ...it, completed: false, notified: false };
-    if (it.lastDone !== y && it.lastDone !== today) reset.streak = 0;
-    return reset;
-  });
-
-  state.itemsByDay = result;
-  state.lastActiveDate = today;
-  save();
+  if (state.lastActiveDate !== todayStr()) { save(); state = syncStore.refresh(false); }
 }
 
 /* ---------------- 业务操作 ---------------- */
@@ -200,6 +170,7 @@ function completedCount(day = state.selectedDay) {
 }
 
 function addItem(title, day = state.selectedDay, time = null, classification = { projectId: null, tagIds: [] }) {
+  rollOverIfNeeded();
   const t = title.trim();
   if (!t) return null;
   const it = { id: uid(), title: t, detail: "", time, completed: false, notified: false, createdAt: Date.now(), ...classification };
@@ -231,7 +202,9 @@ function moveItem(id, from, to) {
   const idx = arr.findIndex((i) => i.id === id);
   if (idx < 0) return;
   const [it] = arr.splice(idx, 1);
+  it.scheduledDate = shiftDate(todayStr(), DAYS.indexOf(to));
   state.itemsByDay[to].unshift(it);
+  setTaskOrder(syncStore.doc, state.itemsByDay[to].map(task => task.id), it.id);
   save();
 }
 function clearCompleted(day) {
@@ -241,6 +214,7 @@ function clearCompleted(day) {
 
 /* 常驻「每天」待办 */
 function addRecurring(title, time = null, classification = { projectId: null, tagIds: [] }) {
+  rollOverIfNeeded();
   const t = title.trim();
   if (!t) return;
   state.recurringItems.unshift({
@@ -259,6 +233,7 @@ function addRecurring(title, time = null, classification = { projectId: null, ta
   return state.recurringItems[0];
 }
 function toggleRecurring(id) {
+  rollOverIfNeeded();
   const it = state.recurringItems.find((i) => i.id === id);
   if (!it) return;
   const today = todayStr();
@@ -299,13 +274,16 @@ function pinAsRecurring(id, from) {
   const [it] = arr.splice(idx, 1);
   it.completed = false;
   state.recurringItems.unshift(it);
+  setTaskOrder(syncStore.doc, state.recurringItems.map(task => task.id), it.id);
   save();
 }
 function unpinRecurring(id) {
   const idx = state.recurringItems.findIndex((i) => i.id === id);
   if (idx < 0) return;
   const [it] = state.recurringItems.splice(idx, 1);
+  it.scheduledDate = todayStr();
   state.itemsByDay.today.unshift(it);
+  setTaskOrder(syncStore.doc, state.itemsByDay.today.map(task => task.id), it.id);
   save();
 }
 
@@ -669,6 +647,7 @@ function dragItems(row) {
 
 function commitTodoOrder(row, orderedIds) {
   const ordered = reorderVisibleItems(dragItems(row), orderedIds);
+  setTaskOrder(syncStore.doc, ordered.map(item => item.id), row.dataset.row);
   if (row.dataset.kind === "recurring") state.recurringItems = ordered;
   else state.itemsByDay[row.dataset.day] = ordered;
   save();
@@ -869,7 +848,7 @@ app.addEventListener("input", (e) => {
     recurDraft = e.target.value;
   } else if (e.target.id === "memo-input") {
     state.memo.text = e.target.value;
-    save();
+    clearTimeout(memoSaveTimer); memoSaveTimer = setTimeout(save, 400);
   }
 });
 app.addEventListener('change', (e) => { if (e.target.id === 'quick-day') quickDay = e.target.value; });
@@ -1065,6 +1044,8 @@ function openSettings() {
         <button class="link-btn" data-s="resetBg" ${s.customBg ? "" : 'style="opacity:.45"'}>恢复默认</button>
       </div>
     </div>
+    <button class="data-btn" data-s="sync"><span>WebDAV 同步与冲突</span><span aria-hidden="true">›</span></button>
+    <div class="set-row"><span>本机到点提醒</span><button class="switch ${s.remindersEnabled !== false ? "on" : ""}" data-s="remindersEnabled" aria-label="本机到点提醒"></button></div>
     <button class="data-btn" data-s="categories"><span>项目与标签</span><span aria-hidden="true">›</span></button>
     <div>
       <div class="set-row"><span>透明度</span><span style="color:var(--text-secondary)">${Math.round(s.opacity * 100)}%</span></div>
@@ -1122,6 +1103,8 @@ function openSettings() {
         return;
       }
       else if (key === "autostart") { toggleAutostart(sw); return; }
+      else if (key === "sync") { overlay.remove(); openSyncSettings(syncStore); return; }
+      else if (key === "remindersEnabled") { state.settings.remindersEnabled = state.settings.remindersEnabled === false; sw.classList.toggle("on", state.settings.remindersEnabled); }
       else if (key === "export") { exportBackup(); return; }
       else if (key === "categories") { overlay.remove(); classificationUI.openManager(); return; }
       else if (key === "import") { importBackup(overlay); return; }
@@ -1164,7 +1147,7 @@ async function toggleAutostart(sw) {
 
 async function exportBackup() {
   try {
-    await TAURI.core.invoke("export_data", { json: JSON.stringify(state, null, 2) });
+    await TAURI.core.invoke("export_data", { json: JSON.stringify(syncStore.backup(state), null, 2) });
   } catch (e) {}
 }
 
@@ -1173,16 +1156,15 @@ async function importBackup(overlay) {
     const content = await TAURI.core.invoke("import_data");
     if (!content) return;
     const parsed = JSON.parse(content);
-    const imported = normalizeSnapshot(parsed, defaultState());
-    localStorage.setItem(STORAGE_KEY + '/before-import', JSON.stringify(state));
-    state = imported;
-    classificationUI.filters.project = ''; classificationUI.filters.tags = [];
-    draft = ''; recurDraft = ''; composerEditId = null; composerEditDay = null; recurEditId = null;
-    if (isWindows && state.settings.showOnDesktop) state.settings.alwaysOnTop = false;
-    save();
+    const revisions = await syncStore.prepareImport(parsed, normalizeSnapshot, defaultState());
+    const counts = syncStore.previewImport(revisions);
     overlay?.remove();
-    applyWindowChrome();
-    render();
+    confirmImport(counts, async () => {
+      await syncStore.import(revisions);
+      classificationUI.filters.project = ''; classificationUI.filters.tags = [];
+      draft = ''; recurDraft = ''; composerEditId = null; composerEditDay = null; recurEditId = null;
+      applyWindowChrome(); render();
+    });
   } catch (e) { classificationUI.showNotice('导入失败：' + e.message); }
 }
 
@@ -1232,6 +1214,8 @@ async function ensureNotifyPermission() {
 }
 
 async function checkReminders() {
+  rollOverIfNeeded();
+  if (state.settings.remindersEnabled === false) return;
   const now = nowHHMM();
   const due = [];
   let changed = false;
@@ -1333,3 +1317,17 @@ setInterval(() => render(), 5 * 60 * 1000);
 setInterval(checkReminders, 30 * 1000);
 checkReminders();
 if (startupNotice) classificationUI.showNotice(startupNotice);
+
+syncStore.notice = text => classificationUI.showNotice(text);
+syncStore.canSync = () => !classificationUI.isComposing() && !memoSaveTimer && !composerEditId && !recurEditId &&
+  !document.querySelector('.overlay:not(.sync-overlay)');
+syncStore.start();
+window.addEventListener('beforeunload', () => syncStore.stop());
+
+app.addEventListener('focusout', e => { if (e.target.id === 'memo-input' && memoSaveTimer) save(); });
+window.addEventListener('pagehide', () => { if (memoSaveTimer) save(); });
+let lastStorageError = '';
+window.addEventListener('todo-sync-status', () => {
+  if (syncStore.storageError && syncStore.storageError !== lastStorageError) classificationUI.showNotice(syncStore.error);
+  lastStorageError = syncStore.storageError || '';
+});
