@@ -1,0 +1,22 @@
+{
+  "recordedAt": "2026-10-20T16:52:54.225867+00:00",
+  "baseCommit": "964a3833612ecc1064e06c45725adb9787d0cc0a",
+  "localNode": "v24.21.0",
+  "localRust": "cargo 1.98.1 (797e8a9bc 2026-08-05) (Homebrew)",
+  "files": {
+    "src/sync-model.js": "859d5cbbe06d0c2e73fcdee0f0f39cc33e3eab1666041367e57de2bba1541fac",
+    "demos/lan-sync/discovery.mjs": "b3f6e8f84a00f6669857b80a63806810a31190dfaf725e1bbb6c81979e3992fa",
+    "demos/lan-sync/security.mjs": "58b977101bce329c609603cef7e9d33caa8696abd2908b6bbc96fb4499d51818",
+    "demos/lan-sync/store.mjs": "f0ef5c45f1cfc583de20a61388d4f14a56ae44006966884b2f0532ac90b6738d",
+    "demos/lan-sync/server.mjs": "2a9a9226d37dd47b44a3bc2c98460e66fd3a5537d8bb1b87d32b3b02a3ae4ba6",
+    "demos/lan-sync/ctl.mjs": "07360a187c4c13284f68906d104dbb0c1eb06084946243fd2a2752ac34c666bd",
+    "demos/lan-sync/package-lock.json": "11e9f11fa9a259ffdd40cf10972c4a3af2537b2d0719d38f2fe21e4cf757495c",
+    "demos/lan-sync/pake/Cargo.lock": "e20b8826f7b5498afe8d38d1a974b9265bd063048f2bc6194b8ea3d4d54f2042",
+    "demos/lan-sync/pake/src/main.rs": "74cbfad51bdb98c84b51e76a1c0167e81f0717cd6ff8f420f86e84c44b24cef8"
+  },
+  "tests": {
+    "macIntegration": 10,
+    "linuxIntegration": 10,
+    "existingModel": 16
+  }
+}

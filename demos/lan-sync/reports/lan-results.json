@@ -1,0 +1,111 @@
+{
+  "tests": [
+    {
+      "name": "mDNS: all three nodes discover two other nodes",
+      "elapsedMs": 70,
+      "sources": [
+        [
+          "mdns",
+          "mdns"
+        ],
+        [
+          "mdns",
+          "mdns"
+        ],
+        [
+          "mdns",
+          "mdns"
+        ]
+      ]
+    },
+    {
+      "name": "pair 971\u2192972 dynamic",
+      "durationMs": 39.96
+    },
+    {
+      "name": "pair 972\u2192973 fixed",
+      "durationMs": 51.84
+    },
+    {
+      "name": "pair 973\u2192971 fixed",
+      "durationMs": 41.0
+    },
+    {
+      "name": "30 automatic edit-to-all-node convergence samples",
+      "medianMs": 202.88,
+      "maxMs": 297.0,
+      "rank28of30Ms": 263.19,
+      "note": "Initial runner used rank 28/30; final nearest-rank P95 and raw samples are in lan-final.json."
+    },
+    {
+      "name": "offline edit/delete conflict preserved and alternative restored",
+      "passed": true
+    },
+    {
+      "name": "SIGKILL restart: identity, pairing, history and pending edits recover",
+      "passed": true
+    },
+    {
+      "name": "40ms egress delay + 5% packet loss on B",
+      "passed": true,
+      "convergenceMs": 404
+    },
+    {
+      "name": "45s idle sample (application payload, not wire traffic)",
+      "resources": [
+        {
+          "ct": 971,
+          "rssMiB": 89.86,
+          "idleCpuOneCorePercent": 0.182,
+          "appPayloadBytesPerSecond": 175.36
+        },
+        {
+          "ct": 972,
+          "rssMiB": 75.36,
+          "idleCpuOneCorePercent": 0.193,
+          "appPayloadBytesPerSecond": 175.36
+        },
+        {
+          "ct": 973,
+          "rssMiB": 81.02,
+          "idleCpuOneCorePercent": 0.259,
+          "appPayloadBytesPerSecond": 171.53
+        }
+      ]
+    },
+    {
+      "name": "300 edits across three nodes",
+      "convergenceMs": 3777,
+      "versions": 346,
+      "rssMiB": [
+        96.91,
+        82.33,
+        88.29
+      ]
+    },
+    {
+      "name": "180s low-rate soak",
+      "edits": 55,
+      "maxRssMiB": [
+        100.53,
+        87.46,
+        95.15
+      ],
+      "finalCounts": [
+        401,
+        401,
+        401
+      ]
+    }
+  ],
+  "environment": {
+    "containers": [
+      971,
+      972,
+      973
+    ],
+    "network": "10.77.42.0/29",
+    "tailscale": "LAN phase; separate real overlay results in tailscale-results.json"
+  },
+  "passed": true
+}

@@ -1,0 +1,111 @@
+<svg width="780" height="290" viewBox="0 0 780 290" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'PingFang SC', 'Segoe UI', sans-serif">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6db0e8"/>
+      <stop offset="0.55" stop-color="#a9cdee"/>
+      <stop offset="1" stop-color="#d8c4a6"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#e5f0ff" stop-opacity="0.88"/>
+      <stop offset="1" stop-color="#f2f7ff" stop-opacity="0.78"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#14284f" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- 背景壁纸与云朵 -->
+  <rect width="780" height="290" rx="22" fill="url(#wall)"/>
+  <ellipse cx="120" cy="70" rx="68" ry="22" fill="#ffffff" opacity="0.42"/>
+  <ellipse cx="640" cy="60" rx="56" ry="18" fill="#ffffff" opacity="0.38"/>
+  <ellipse cx="380" cy="240" rx="95" ry="28" fill="#ffffff" opacity="0.18"/>
+
+  <!-- 左侧：迷你悬浮栏（常规收起态） -->
+  <g transform="translate(48, 36)">
+    <text x="0" y="0" font-size="13" font-weight="700" fill="#18233a">① 迷你悬浮栏（收起态）</text>
+    <text x="0" y="18" font-size="11.5" fill="#3b4d6b">停靠屏幕角落，点击数字展开完整面板，点击 ＋ 秒记</text>
+
+    <!-- 有待办状态 -->
+    <g transform="translate(0, 44)" filter="url(#sh)">
+      <rect x="0" y="0" width="180" height="46" rx="23" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.75"/>
+      <!-- 拖拽手柄 -->
+      <g fill="#5d6b85" opacity="0.65" transform="translate(16, 15)">
+        <circle cx="3" cy="3" r="1.3"/><circle cx="8" cy="3" r="1.3"/>
+        <circle cx="3" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>
+        <circle cx="3" cy="13" r="1.3"/><circle cx="8" cy="13" r="1.3"/>
+      </g>
+      <!-- 日期 + 数量 -->
+      <text x="58" y="28" font-size="13" font-weight="600" fill="#18233a">今天</text>
+      <text x="95" y="29" font-size="15" font-weight="700" fill="#1573ff">3</text>
+      <!-- 分隔线 -->
+      <line x1="128" y1="14" x2="128" y2="32" stroke="#18233a" stroke-opacity="0.16" stroke-width="1"/>
+      <!-- 加号按钮 -->
+      <circle cx="153" cy="23" r="15" fill="#ffffff" opacity="0.55"/>
+      <path d="M153 17 v12 M147 23 h12" stroke="#18233a" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <text x="194" y="72" font-size="11.5" font-weight="500" fill="#2c3e5a">← 待办未清零（蓝色计数）</text>
+
+    <!-- 全部完成状态 -->
+    <g transform="translate(0, 112)" filter="url(#sh)">
+      <rect x="0" y="0" width="180" height="46" rx="23" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.75"/>
+      <g fill="#5d6b85" opacity="0.65" transform="translate(16, 15)">
+        <circle cx="3" cy="3" r="1.3"/><circle cx="8" cy="3" r="1.3"/>
+        <circle cx="3" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>
+        <circle cx="3" cy="13" r="1.3"/><circle cx="8" cy="13" r="1.3"/>
+      </g>
+      <text x="58" y="28" font-size="13" font-weight="600" fill="#18233a">今天</text>
+      <text x="95" y="29" font-size="15" font-weight="700" fill="#29ab56">0</text>
+      <line x1="128" y1="14" x2="128" y2="32" stroke="#18233a" stroke-opacity="0.16" stroke-width="1"/>
+      <circle cx="153" cy="23" r="15" fill="#ffffff" opacity="0.55"/>
+      <path d="M153 17 v12 M147 23 h12" stroke="#18233a" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <text x="194" y="140" font-size="11.5" font-weight="500" fill="#2c3e5a">← 今日已清零（绿色计数）</text>
+  </g>
+
+  <!-- 右侧：悬浮栏快捷新增态 -->
+  <g transform="translate(416, 36)">
+    <text x="0" y="0" font-size="13" font-weight="700" fill="#18233a">② 快捷新增态（点击 ＋ 或按快捷键）</text>
+    <text x="0" y="18" font-size="11.5" fill="#3b4d6b">无需展开主面板，直接输入时间、+项目 与 #标签</text>
+
+    <!-- 顶部迷你栏（右对齐） -->
+    <g transform="translate(136, 34)" filter="url(#sh)">
+      <rect x="0" y="0" width="180" height="44" rx="22" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.75"/>
+      <g fill="#5d6b85" opacity="0.65" transform="translate(16, 14)">
+        <circle cx="3" cy="3" r="1.3"/><circle cx="8" cy="3" r="1.3"/>
+        <circle cx="3" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>
+        <circle cx="3" cy="13" r="1.3"/><circle cx="8" cy="13" r="1.3"/>
+      </g>
+      <text x="58" y="27" font-size="13" font-weight="600" fill="#18233a">今天</text>
+      <text x="95" y="28" font-size="15" font-weight="700" fill="#1573ff">3</text>
+      <line x1="128" y1="13" x2="128" y2="31" stroke="#18233a" stroke-opacity="0.16" stroke-width="1"/>
+      <circle cx="153" cy="22" r="15" fill="#1573ff" opacity="0.16"/>
+      <path d="M153 16 v12 M147 22 h12" stroke="#1573ff" stroke-width="2" stroke-linecap="round"/>
+    </g>
+
+    <!-- 下方快捷输入卡片 -->
+    <g transform="translate(0, 88)" filter="url(#sh)">
+      <rect x="0" y="0" width="316" height="136" rx="22" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.75"/>
+      <text x="16" y="26" font-size="12" font-weight="600" fill="#5d6b85">记下一件事</text>
+      <circle cx="292" cy="21" r="11" fill="#ffffff" opacity="0.55"/>
+      <path d="M288.5 17.5 l7 7 M295.5 17.5 l-7 7" stroke="#5d6b85" stroke-width="1.6" stroke-linecap="round"/>
+
+      <!-- 输入内容 -->
+      <text x="16" y="54" font-size="13.5" font-weight="500" fill="#18233a">15:00 提交设计稿 +官网改版 #设计</text>
+
+      <!-- 实时解析出的项目与标签预览 -->
+      <rect x="16" y="66" width="66" height="18" rx="9" fill="#1573ff" opacity="0.14"/>
+      <text x="49" y="79" font-size="10.5" font-weight="600" fill="#1573ff" text-anchor="middle">+ 官网改版</text>
+      <rect x="88" y="66" width="44" height="18" rx="9" fill="#e8821a" opacity="0.16"/>
+      <text x="110" y="79" font-size="10.5" font-weight="600" fill="#d46b08" text-anchor="middle"># 设计</text>
+
+      <!-- 底部栏 -->
+      <rect x="16" y="96" width="58" height="24" rx="8" fill="#ffffff" opacity="0.7" stroke="#cdd8ea"/>
+      <text x="38" y="112" font-size="11.5" font-weight="600" fill="#18233a" text-anchor="middle">今天</text>
+      <path d="M58 106 l3.5 4 l3.5 -4" fill="none" stroke="#5d6b85" stroke-width="1.5" stroke-linecap="round"/>
+
+      <text x="266" y="112" font-size="11" font-weight="500" fill="#5d6b85" text-anchor="end">Enter 添加</text>
+      <circle cx="290" cy="108" r="12" fill="#1573ff"/>
+      <path d="M290 113 v-9 M286 108 l4 -4 l4 4" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

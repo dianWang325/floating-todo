@@ -1,0 +1,114 @@
+{
+  "network": "real Tailscale, isolated Headscale, mDNS disabled",
+  "tests": [
+    {
+      "name": "Tailscale node-list discovery and authenticated address migration",
+      "urls": [
+        [
+          "http://100.100.42.2:47831",
+          "http://100.100.42.3:47831"
+        ],
+        [
+          "http://100.100.42.1:47831",
+          "http://100.100.42.3:47831"
+        ],
+        [
+          "http://100.100.42.1:47831",
+          "http://100.100.42.2:47831"
+        ]
+      ]
+    },
+    {
+      "name": "physical-address application fallback unavailable",
+      "passed": true
+    },
+    {
+      "name": "dynamic code pairing over Tailscale",
+      "durationMs": 36.31
+    },
+    {
+      "name": "fixed code pairing over Tailscale",
+      "durationMs": 45.15
+    },
+    {
+      "name": "fixed code pairing over Tailscale",
+      "durationMs": 41.71
+    },
+    {
+      "name": "30 Tailscale automatic convergence samples",
+      "medianMs": 263.18,
+      "p95Ms": 288.52,
+      "maxMs": 360.04,
+      "samplesMs": [
+        288.52,
+        264.9,
+        263.46,
+        264.44,
+        259.65,
+        256.72,
+        270.32,
+        282.55,
+        276.16,
+        273.39,
+        283.28,
+        256.59,
+        194.74,
+        220.5,
+        260.3,
+        241.14,
+        275.55,
+        262.9,
+        270.02,
+        251.06,
+        360.04,
+        200.79,
+        284.68,
+        217.22,
+        267.8,
+        242.79,
+        272.94,
+        205.49,
+        253.7,
+        238.08
+      ]
+    },
+    {
+      "name": "conflict preservation and replacement over Tailscale",
+      "passed": true
+    },
+    {
+      "name": "VPN stop/start reconnect without manual sync",
+      "recoveryMs": 6863
+    },
+    {
+      "name": "45s overlay idle sample",
+      "resources": [
+        {
+          "ct": 971,
+          "appRssMiB": 82.25,
+          "appIdleCpuPercent": 0.183,
+          "appPayloadBytesPerSecond": 166.7,
+          "vpnCgroupMiB": 35.94,
+          "vpnCpuPercent": 0.196
+        },
+        {
+          "ct": 972,
+          "appRssMiB": 78.6,
+          "appIdleCpuPercent": 0.174,
+          "appPayloadBytesPerSecond": 166.7,
+          "vpnCgroupMiB": 35.35,
+          "vpnCpuPercent": 0.19
+        },
+        {
+          "ct": 973,
+          "appRssMiB": 83.42,
+          "appIdleCpuPercent": 0.188,
+          "appPayloadBytesPerSecond": 166.7,
+          "vpnCgroupMiB": 40.09,
+          "vpnCpuPercent": 0.18
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

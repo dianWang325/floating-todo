@@ -58,6 +58,23 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
+      - name: Verify macOS application signature
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apps=()
+          while IFS= read -r -d '' app; do
+            apps+=("$app")
+          done < <(find src-tauri/target -type d -path '*/release/bundle/macos/*.app' -print0)
+          if [ "${#apps[@]}" -eq 0 ]; then
+            echo "No macOS application bundle found"
+            exit 1
+          fi
+          for app in "${apps[@]}"; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+          done
+
       - name: Windows application smoke test
         if: matrix.platform == 'windows-latest'
         run: ./tests/native-smoke.ps1 -Executable src-tauri/target/release/floating-todo.exe

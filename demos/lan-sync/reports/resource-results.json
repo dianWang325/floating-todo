@@ -1,0 +1,80 @@
+{
+  "note": "Interface bytes include headers/control/background traffic. eth1 underlay and tailscale0 overlay overlap; do not sum.",
+  "sampleSeconds": 35.51,
+  "nodes": {
+    "971": {
+      "sampleSeconds": 35.56,
+      "interfacesBytesPerSecond": {
+        "eth0": 2690.42,
+        "eth1": 331.77,
+        "tailscale0": 476.09
+      },
+      "services": {
+        "todo-sync-demo": {
+          "cgroupMemoryMiB": 91.59,
+          "idleCpuOneCorePercent": 0.166,
+          "tasks": 8
+        },
+        "todo-tailscaled": {
+          "cgroupMemoryMiB": 29.22,
+          "idleCpuOneCorePercent": 0.195,
+          "tasks": 8
+        }
+      }
+    },
+    "972": {
+      "sampleSeconds": 35.53,
+      "interfacesBytesPerSecond": {
+        "eth0": 3025.74,
+        "eth1": 310.17,
+        "tailscale0": 495.32
+      },
+      "services": {
+        "todo-sync-demo": {
+          "cgroupMemoryMiB": 77.28,
+          "idleCpuOneCorePercent": 0.179,
+          "tasks": 8
+        },
+        "todo-tailscaled": {
+          "cgroupMemoryMiB": 28.48,
+          "idleCpuOneCorePercent": 0.267,
+          "tasks": 8
+        }
+      }
+    },
+    "973": {
+      "sampleSeconds": 35.51,
+      "interfacesBytesPerSecond": {
+        "eth0": 2823.31,
+        "eth1": 637.14,
+        "tailscale0": 498.59
+      },
+      "services": {
+        "todo-sync-demo": {
+          "cgroupMemoryMiB": 100.91,
+          "idleCpuOneCorePercent": 0.174,
+          "tasks": 8
+        },
+        "todo-tailscaled": {
+          "cgroupMemoryMiB": 39.44,
+          "idleCpuOneCorePercent": 0.209,
+          "tasks": 9
+        }
+      }
+    },
+    "974": {
+      "sampleSeconds": 35.51,
+      "interfacesBytesPerSecond": {
+        "eth0": 1141.65,
+        "eth1": 53.92
+      },
+      "services": {
+        "todo-headscale": {
+          "cgroupMemoryMiB": 15.45,
+          "idleCpuOneCorePercent": 0.096,
+          "tasks": 6
+        }
+      }
+    }
+  }
+}

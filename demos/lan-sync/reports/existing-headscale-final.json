@@ -1,0 +1,86 @@
+[
+  {
+    "ct": 971,
+    "count": 1588,
+    "root": "dc6f2d0cfcc43fe42d5250c8b93ece722d166ec95488b6baa546cd8a512081bf",
+    "peers": [
+      {
+        "id": "8dfd815c-60bb-4e35-9b3d-43db81d063bd",
+        "url": "http://100.64.0.6:47831",
+        "pairedAt": 1792556066041,
+        "failures": 0,
+        "retryAt": 0,
+        "lastSuccess": 1792556176797,
+        "durationMs": 23.47878099999798,
+        "error": null
+      },
+      {
+        "id": "e0d14086-d279-491c-bdc3-b87f91b2cfc9",
+        "url": "http://100.64.0.9:47831",
+        "pairedAt": 1792556066202,
+        "failures": 0,
+        "retryAt": 0,
+        "lastSuccess": 1792556176798,
+        "durationMs": 24.4513719999959,
+        "error": null
+      }
+    ],
+    "paused": false
+  },
+  {
+    "ct": 972,
+    "count": 1588,
+    "root": "dc6f2d0cfcc43fe42d5250c8b93ece722d166ec95488b6baa546cd8a512081bf",
+    "peers": [
+      {
+        "id": "c2a45809-df69-43ee-a3bb-3c25bc930913",
+        "url": "http://100.64.0.5:47831",
+        "pairedAt": 1792556066034,
+        "failures": 0,
+        "retryAt": 0,
+        "lastSuccess": 1792556163550,
+        "durationMs": 26.32428699999582,
+        "error": null
+      },
+      {
+        "id": "e0d14086-d279-491c-bdc3-b87f91b2cfc9",
+        "url": "http://100.64.0.9:47831",
+        "pairedAt": 1792556066152,
+        "failures": 0,
+        "retryAt": 0,
+        "lastSuccess": 1792556163553,
+        "durationMs": 29.397569000007934,
+        "error": null
+      }
+    ],
+    "paused": false
+  },
+  {
+    "ct": 973,
+    "count": 1588,
+    "root": "dc6f2d0cfcc43fe42d5250c8b93ece722d166ec95488b6baa546cd8a512081bf",
+    "peers": [
+      {
+        "id": "8dfd815c-60bb-4e35-9b3d-43db81d063bd",
+        "url": "http://100.64.0.6:47831",
+        "pairedAt": 1792556066144,
+        "failures": 0,
+        "retryAt": 0,
+        "lastSuccess": 1792556165307,
+        "durationMs": 26.74638799999957,
+        "error": null
+      },
+      {
+        "id": "c2a45809-df69-43ee-a3bb-3c25bc930913",
+        "url": "http://100.64.0.5:47831",
+        "pairedAt": 1792556066209,
+        "failures": 0,
+        "retryAt": 0,
+        "lastSuccess": 1792556165309,
+        "durationMs": 28.660980000000563,
+        "error": null
+      }
+    ],
+    "paused": false
+  }
+]

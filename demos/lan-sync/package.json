@@ -1,0 +1,13 @@
+{
+  "name": "floating-todo-lan-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cargo build --release --manifest-path pake/Cargo.toml",
+    "test": "node --test test/*.test.mjs",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "multicast-dns": "7.2.5"
+  }
+}
