@@ -5,6 +5,7 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 mod sync_storage;
+mod lan;
 
 #[cfg(target_os = "windows")]
 mod windows_desktop;
@@ -95,6 +96,7 @@ fn set_window_screen_position(window: tauri::WebviewWindow, x: i32, y: i32) -> R
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
+        .manage(lan::LanState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init());
@@ -111,6 +113,8 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            lan::lan_start, lan::lan_stop, lan::lan_status, lan::lan_codes, lan::lan_rotate,
+            lan::lan_revoke, lan::lan_discover, lan::lan_pair, lan::lan_pull,
             sync_storage::storage_load,
             sync_storage::storage_save,
             sync_storage::sync_set_password,

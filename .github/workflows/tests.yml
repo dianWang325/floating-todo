@@ -29,6 +29,14 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  native-lan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path crates/lan-sync/Cargo.toml --locked
+
   native-windows:
     if: github.event_name == 'pull_request'
     runs-on: windows-latest

@@ -6,6 +6,7 @@ import { createWindowController } from './window-controller.js';
 import { SyncStore } from './sync-store.js';
 import { dateInZone, shiftDate, setTaskOrder } from './sync-model.js';
 import { openSyncSettings, confirmImport } from './sync-ui.js';
+import { openLanSettings } from './lan-ui.js';
 let syncStore = null;
 let memoSaveTimer = null;
 
@@ -1024,37 +1025,53 @@ function openSettings() {
   const bgHex = s.customBg ? rgbToHex(s.customBg) : "#dceaff";
   overlay.innerHTML = `<div class="settings">
     <h2>小组件设置</h2>
-    <div class="set-row"><span>窗口阴影</span><button type="button" class="switch ${s.shadowEnabled ? "on" : ""}" data-s="shadowEnabled" role="switch" aria-checked="${!!s.shadowEnabled}" aria-label="窗口阴影"></button></div>
-    <div class="set-row"><span>始终置顶</span><div class="switch ${s.alwaysOnTop ? "on" : ""}" data-s="alwaysOnTop"></div></div>
-    ${isWindows ? `<div class="set-row"><span>固定在桌面（Win+D 后仍显示）</span><div class="switch ${s.showOnDesktop ? "on" : ""}" data-s="showOnDesktop"></div></div>` : ""}
-    <div class="set-row"><span>鼠标穿透（点击落到下层）</span><div class="switch ${s.clickThrough ? "on" : ""}" data-s="clickThrough"></div></div>
-    <div class="set-row"><span>开机自启动</span><div class="switch" id="autostart-sw" data-s="autostart"></div></div>
-    <div class="set-row"><span>开启备忘录</span><div class="switch ${s.memoEnabled ? "on" : ""}" data-s="memoEnabled"></div></div>
-    <div>
-      <div style="font-size:13px;font-weight:500;margin-bottom:6px">外观</div>
-      <div class="seg-control">
-        <button class="${s.appearance === "system" ? "on" : ""}" data-ap="system">跟随系统</button>
-        <button class="${s.appearance === "light" ? "on" : ""}" data-ap="light">浅色</button>
-        <button class="${s.appearance === "dark" ? "on" : ""}" data-ap="dark">深色</button>
+    <section class="settings-group" aria-labelledby="settings-window-title">
+      <h3 id="settings-window-title">窗口与行为</h3>
+      <div class="set-row"><span>始终置顶</span><div class="switch ${s.alwaysOnTop ? "on" : ""}" data-s="alwaysOnTop"></div></div>
+      ${isWindows ? `<div class="set-row"><span>固定在桌面（Win+D 后仍显示）</span><div class="switch ${s.showOnDesktop ? "on" : ""}" data-s="showOnDesktop"></div></div>` : ""}
+      <div class="set-row"><span>鼠标穿透（点击落到下层）</span><div class="switch ${s.clickThrough ? "on" : ""}" data-s="clickThrough"></div></div>
+      <div class="set-row"><span>开机自启动</span><div class="switch" id="autostart-sw" data-s="autostart"></div></div>
+      <div class="set-row"><span>开启备忘录</span><div class="switch ${s.memoEnabled ? "on" : ""}" data-s="memoEnabled"></div></div>
+    </section>
+    <section class="settings-group" aria-labelledby="settings-appearance-title">
+      <h3 id="settings-appearance-title">外观</h3>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:6px">主题</div>
+        <div class="seg-control">
+          <button class="${s.appearance === "system" ? "on" : ""}" data-ap="system">跟随系统</button>
+          <button class="${s.appearance === "light" ? "on" : ""}" data-ap="light">浅色</button>
+          <button class="${s.appearance === "dark" ? "on" : ""}" data-ap="dark">深色</button>
+        </div>
       </div>
-    </div>
-    <div class="set-row"><span>背景色</span>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="color" id="bg-color" value="${bgHex}"/>
-        <button class="link-btn" data-s="resetBg" ${s.customBg ? "" : 'style="opacity:.45"'}>恢复默认</button>
+      <div class="set-row"><span>背景色</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="color" id="bg-color" value="${bgHex}"/>
+          <button class="link-btn" data-s="resetBg" ${s.customBg ? "" : 'style="opacity:.45"'}>恢复默认</button>
+        </div>
       </div>
-    </div>
-    <button class="data-btn" data-s="sync"><span>WebDAV 同步与冲突</span><span aria-hidden="true">›</span></button>
-    <div class="set-row"><span>本机到点提醒</span><button class="switch ${s.remindersEnabled !== false ? "on" : ""}" data-s="remindersEnabled" aria-label="本机到点提醒"></button></div>
-    <button class="data-btn" data-s="categories"><span>项目与标签</span><span aria-hidden="true">›</span></button>
-    <div>
-      <div class="set-row"><span>透明度</span><span style="color:var(--text-secondary)">${Math.round(s.opacity * 100)}%</span></div>
-      <input type="range" id="op-range" min="0.2" max="0.95" step="0.01" value="${s.opacity}"/>
-    </div>
-    <div class="set-row" style="gap:8px">
-      <button class="data-btn" data-s="export">${ICONS.download}<span>导出备份</span></button>
-      <button class="data-btn" data-s="import">${ICONS.upload}<span>导入备份</span></button>
-    </div>
+      <div>
+        <div class="set-row"><span>透明度</span><span style="color:var(--text-secondary)">${Math.round(s.opacity * 100)}%</span></div>
+        <input type="range" id="op-range" min="0.2" max="0.95" step="0.01" value="${s.opacity}"/>
+      </div>
+      <div class="set-row"><span>窗口阴影</span><button type="button" class="switch ${s.shadowEnabled ? "on" : ""}" data-s="shadowEnabled" role="switch" aria-checked="${!!s.shadowEnabled}" aria-label="窗口阴影"></button></div>
+    </section>
+    <section class="settings-group" aria-labelledby="settings-categories-title">
+      <h3 id="settings-categories-title">分类</h3>
+      <button class="data-btn" data-s="categories"><span>项目与标签</span><span aria-hidden="true">›</span></button>
+    </section>
+    <section class="settings-group" aria-labelledby="settings-sync-title">
+      <h3 id="settings-sync-title">同步与备份</h3>
+      <button class="data-btn" data-s="lan"><span>局域网与 Tailscale 同步</span><span aria-hidden="true">›</span></button>
+      <button class="data-btn" data-s="sync"><span>WebDAV 同步与冲突</span><span aria-hidden="true">›</span></button>
+      <div class="set-row" style="gap:8px">
+        <button class="data-btn" data-s="export">${ICONS.download}<span>导出备份</span></button>
+        <button class="data-btn" data-s="import">${ICONS.upload}<span>导入备份</span></button>
+      </div>
+    </section>
+    <section class="settings-group" aria-labelledby="settings-notifications-title">
+      <h3 id="settings-notifications-title">通知</h3>
+      <div class="set-row"><span>本机到点提醒</span><button class="switch ${s.remindersEnabled !== false ? "on" : ""}" data-s="remindersEnabled" aria-label="本机到点提醒"></button></div>
+    </section>
     <div style="font-size:11px;color:var(--text-secondary);line-height:1.6">
       💡 全局快捷键 <b>${navigator.platform.includes("Mac") ? "⌘⇧Space" : "Ctrl+Shift+Space"}</b> 可在任意应用中唤起并聚焦输入框，快速记一笔。<br>
       ⏰ 输入「明天 15:00 开会」会自动识别日期与提醒时间。<br>
@@ -1103,6 +1120,7 @@ function openSettings() {
         return;
       }
       else if (key === "autostart") { toggleAutostart(sw); return; }
+      else if (key === "lan") { overlay.remove(); openLanSettings(syncStore); return; }
       else if (key === "sync") { overlay.remove(); openSyncSettings(syncStore); return; }
       else if (key === "remindersEnabled") { state.settings.remindersEnabled = state.settings.remindersEnabled === false; sw.classList.toggle("on", state.settings.remindersEnabled); }
       else if (key === "export") { exportBackup(); return; }

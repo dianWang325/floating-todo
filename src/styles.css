@@ -748,6 +748,22 @@ button {
   background: rgba(120, 132, 152, 0.28);
   border-radius: 3px;
 }
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.settings-group + .settings-group {
+  border-top: var(--hairline) solid rgba(var(--border), var(--border-alpha));
+  padding-top: 14px;
+}
+.settings-group h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 .settings h2 {
   font-size: 14.5px;
   font-weight: 700;
@@ -1150,3 +1166,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sync-conflict h3 { font-size: 13px; }
 .sync-version { border: 1px solid #8884; border-radius: 8px; padding: 9px; margin: 8px 0; font-size: 12px; }
 .sync-version pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 180px; overflow: auto; }
+
+/* Native LAN pairing and discovery. */
+.lan-input { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 8px; border-radius: 8px; border: var(--hairline) solid rgba(var(--border), var(--border-alpha)); background: rgba(var(--panel-top), .7); color: var(--text-primary); }
+.lan-peer { padding: 8px 0; overflow-wrap: anywhere; }
+[data-lan-candidates] .data-btn { margin-bottom: 6px; overflow-wrap: anywhere; }
+[data-lan-codes] { font-variant-numeric: tabular-nums; font-size: 13px; }

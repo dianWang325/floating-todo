@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "real mDNS discovery",
+    "physical LAN IPv4 transport",
+    "dynamic and persistent pairing",
+    "three-way concurrent conflict retention and replacement",
+    "230-version backlog pagination and convergence",
+    "revocation rejects previously authenticated peer"
+  ],
+  "transport": "native Rust + production JS revision model",
+  "backlogMs": 146,
+  "count": 234,
+  "root": "2ec8af5da61a51056307d3c568a931ba5002e84385d6fa54c201ee18b86b1d52",
+  "passed": true
+}

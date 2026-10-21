@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>NSLocalNetworkUsageDescription</key><string>发现并同步你配对的悬浮待办设备。</string>
+<key>NSBonjourServices</key><array><string>_floatingtodo._tcp</string></array>
+</dict></plist>

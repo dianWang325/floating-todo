@@ -17,3 +17,5 @@ legacy-macos-swift/.build/
 # Browser verification artifacts
 test-results/
 playwright-report/
+# Native LAN transport standalone tests
+crates/lan-sync/target/

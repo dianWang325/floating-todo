@@ -85,3 +85,43 @@ test('the first UI edit after initialization is tracked independently from the b
   const restarted = new SyncStore({ native: true, invoke: store.invoke }); const loaded = await restarted.init(snapshot(), '{}');
   assert.equal(loaded.itemsByDay.today[0].id, 'first');
 });
+
+test('LAN arrivals merge with edits made during fetch and relay through WebDAV', async () => {
+  const remote = server(); const a = await device(remote), b = await device(remote), c = await device(remote);
+  writeRevision(a.doc, 'task', 'lan-task', task('lan-task'));
+  b.doc.lan = { enabled: true, name: 'B' }; let release;
+  const native = b.invoke;
+  b.invoke = (name, args) => name === 'lan_pull' ? new Promise(resolve => { release = resolve; }) : native(name, args);
+  const incoming = b.syncLan();
+  while (!release) await new Promise(resolve => setTimeout(resolve, 0));
+  writeRevision(b.doc, 'task', 'local-task', task('local-task'));
+  release(structuredClone(a.doc.revisions)); await incoming; clearTimeout(b.lanTimer);
+  assert.equal(currentEntities(b.doc).get('task:local-task').payload.title, 'local-task');
+  assert.equal(currentEntities(b.doc).get('task:lan-task').payload.title, 'lan-task');
+  assert.ok(b.doc.outbox.includes(a.doc.revisions[0].revisionId));
+  await b.sync(true); await c.sync(true);
+  assert.equal(currentEntities(c.doc).get('task:lan-task').payload.title, 'lan-task');
+});
+
+test('LAN defers incoming records while editing and rejects an invalid batch atomically', async () => {
+  const remote = server(); const a = await device(remote), b = await device(remote);
+  writeRevision(a.doc, 'task', 'incoming', task('incoming'));
+  b.doc.lan = { enabled: true }; const native = b.invoke; let editing = false;
+  b.canSync = () => !editing;
+  b.invoke = async (name, args) => {
+    if (name !== 'lan_pull') return native(name, args);
+    editing = true; return a.doc.revisions;
+  };
+  await b.syncLan(); assert.equal(b.doc.revisions.length, 0);
+  editing = false;
+  b.invoke = async (name, args) => name === 'lan_pull' ? [...a.doc.revisions, { revisionId: 'invalid' }] : native(name, args);
+  await assert.rejects(b.syncLan()); assert.equal(b.doc.revisions.length, 0);
+});
+
+test('LAN persistence failure prevents next fetch until durable retry succeeds', async () => {
+  const remote = server(); const a = await device(remote); a.doc.lan = { enabled: true };
+  const native = a.invoke; let pulls = 0;
+  a.invoke = (name, args) => { if (name === 'lan_pull') { pulls++; return []; } return native(name, args); };
+  remote.failStorage = true; await assert.rejects(a.persist()); await assert.rejects(a.syncLan()); assert.equal(pulls, 0);
+  remote.failStorage = false; await a.syncLan(); assert.equal(pulls, 1);
+});

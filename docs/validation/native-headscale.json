@@ -1,0 +1,33 @@
+{
+  "tests": [
+    "real mDNS discovery",
+    "Tailscale CLI automatic discovery",
+    "Headscale IPv4 transport discovery",
+    "dynamic and persistent pairing",
+    "three-way concurrent conflict retention and replacement",
+    "230-version backlog pagination and convergence",
+    "revocation rejects previously authenticated peer"
+  ],
+  "transport": "native Rust + production JS revision model",
+  "backlogMs": 207,
+  "count": 234,
+  "root": "f572c05806adf6a0501f9e5e195bf19f82637594809cb0ae5d6d0428ed5de54b",
+  "idle": {
+    "durationMs": 30077,
+    "nodes": [
+      {
+        "rssKiB": 9272,
+        "cpuTicks": 2
+      },
+      {
+        "rssKiB": 9276,
+        "cpuTicks": 3
+      },
+      {
+        "rssKiB": 9288,
+        "cpuTicks": 3
+      }
+    ]
+  },
+  "passed": true
+}

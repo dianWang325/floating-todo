@@ -42,17 +42,59 @@ export class SyncStore {
   commit(view) {
     commitView(this.doc, this.view, view);
     this.view = structuredClone(view); this.mirror();
-    this.persist(); this.schedule();
+    this.persist(); this.schedule(); this.scheduleLan();
   }
   refresh(notify = true) {
     this.view = projectView(this.doc, this.base); this.mirror();
     if (notify) this.onChange(structuredClone(this.view));
     return structuredClone(this.view);
   }
-  async changed() { await this.persist(); this.refresh(); this.schedule(); }
+  async changed() { await this.persist(); this.refresh(); this.schedule(); this.scheduleLan(); }
   schedule() {
     clearTimeout(this.timer);
     if (this.doc.sync.enabled) this.timer = setTimeout(() => this.sync().catch(() => {}), 2500);
+  }
+  async configureLan(enabled, name = this.doc.lan?.name || '我的待办') {
+    if (!this.native) throw new Error('局域网同步仅在桌面应用中可用');
+    if (this.lanBusy) throw new Error('正在同步，请稍后修改连接');
+    if (enabled) {
+      await this.persist();
+      await this.invoke('lan_start', { name });
+    } else await this.invoke('lan_stop');
+    this.doc.lan = { enabled, name };
+    await this.persist(); this.lanError = ''; this.scheduleLan();
+  }
+  scheduleLan() {
+    clearTimeout(this.lanTimer);
+    if (this.doc.lan?.enabled) this.lanTimer = setTimeout(() => this.syncLan().catch(() => {}), 250);
+  }
+  async syncLan() {
+    if (!this.native || !this.doc.lan?.enabled || this.lanBusy || this.busy || (this.canSync && !this.canSync())) return;
+    this.lanBusy = true;
+    try {
+      // Flush queued local edits; idle polling must not rewrite SQLite or rebuild the index.
+      if (this.storageError) await this.persist(); else await this.queue;
+      const revisions = await this.invoke('lan_pull');
+      // Recheck after network awaits: edits may have started while fetching.
+      if (!this.doc.lan?.enabled || (this.canSync && !this.canSync())) return;
+      if (!Array.isArray(revisions) || revisions.length > 200) throw new Error('局域网版本批次无效');
+      for (const r of revisions) {
+        if (JSON.stringify(r).length > 128 * 1024 || r.modifiedAt > Date.now() + 300000) throw new Error('版本过大或设备时钟偏差超过五分钟');
+      }
+      if (revisions.length) {
+        const next = structuredClone(this.doc), known = new Set(next.revisions.map(r => r.revisionId));
+        const added = mergeRevisions(next, revisions);
+        // LAN arrivals also relay to WebDAV; receiving them must not strand history.
+        const pending = new Set(next.outbox);
+        for (const r of revisions) if (!known.has(r.revisionId)) pending.add(r.revisionId);
+        next.outbox = [...pending]; this.doc = next;
+        const saved = this.persist();
+        if (added) this.refresh();
+        await saved; this.schedule(); this.scheduleLan();
+      }
+      this.lanError = '';
+    } catch (error) { this.lanError = String(error.message || error); throw error; }
+    finally { this.lanBusy = false; this.onStatus(); }
   }
   start() {
     this.interval = setInterval(() => { if (Date.now() >= this.retryAt) this.sync().catch(() => {}); }, 60000);
@@ -60,8 +102,12 @@ export class SyncStore {
     window.addEventListener('online', this.online);
     window.addEventListener('focus', this.online);
     this.schedule();
+    if (this.native) {
+      this.lanInterval = setInterval(() => this.syncLan().catch(() => {}), 3000);
+      if (this.doc.lan?.enabled) this.configureLan(true).catch(error => { this.lanError = String(error); this.onStatus(); });
+    }
   }
-  stop() { clearInterval(this.interval); clearTimeout(this.timer); window.removeEventListener('online', this.online); window.removeEventListener('focus', this.online); }
+  stop() { clearInterval(this.lanInterval); clearTimeout(this.lanTimer); clearInterval(this.interval); clearTimeout(this.timer); window.removeEventListener('online', this.online); window.removeEventListener('focus', this.online); }
   status() {
     return { busy: this.busy, error: this.error, pending: this.doc.outbox.length, conflicts: conflicts(this.doc).length, lastSuccess: this.doc.sync.lastSuccess, enabled: this.doc.sync.enabled };
   }
@@ -148,7 +194,7 @@ export class SyncStore {
     }
   }
   async sync(force = false) {
-    if (this.busy || (!force && !this.doc.sync.enabled) || (this.canSync && !this.canSync())) return;
+    if (this.busy || this.lanBusy || (!force && !this.doc.sync.enabled) || (this.canSync && !this.canSync())) return;
     if (!this.native) throw new Error('请在桌面应用中使用 WebDAV 同步');
     this.busy = true; this.error = ''; this.onStatus();
     const before = new Set(conflicts(this.doc).map(c => c.key));

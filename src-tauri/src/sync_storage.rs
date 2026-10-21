@@ -44,7 +44,9 @@ pub fn storage_save(
     expected_generation: u64,
 ) -> Result<u64, String> {
     let mut db = connection(&app)?;
-    save_document(&mut db, &json, legacy, expected_generation)
+    let generation = save_document(&mut db, &json, legacy, expected_generation)?;
+    crate::lan::publish(&app, &json);
+    Ok(generation)
 }
 
 fn save_document(
