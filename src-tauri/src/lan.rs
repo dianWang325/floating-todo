@@ -1,7 +1,7 @@
 use floating_todo_lan::{Node, Runtime, Vault, PORT};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Default)]
 pub struct LanState {
     node: Mutex<Option<Node>>,
@@ -26,6 +26,35 @@ pub fn publish(app: &AppHandle, json: &str) {
         }
     }
 }
+/// Use the user-facing computer name on macOS, and the Windows device name.
+#[tauri::command]
+pub async fn lan_device_name() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = tokio::process::Command::new("/usr/sbin/scutil");
+        command.args(["--get", "ComputerName"]).kill_on_drop(true);
+        if let Ok(Ok(output)) =
+            tokio::time::timeout(std::time::Duration::from_secs(2), command.output()).await
+        {
+            if output.status.success() {
+                let name = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                if !name.is_empty() {
+                    return name.chars().take(40).collect();
+                }
+            }
+        }
+    }
+    for key in ["COMPUTERNAME", "HOSTNAME"] {
+        if let Ok(name) = std::env::var(key) {
+            let name = name.trim();
+            if !name.is_empty() {
+                return name.chars().take(40).collect();
+            }
+        }
+    }
+    "floating todo".into()
+}
+
 #[tauri::command]
 pub async fn lan_start(
     app: AppHandle,
@@ -75,7 +104,11 @@ pub async fn lan_start(
         Ok(())
     });
     save(&serde_json::to_string(&vault).map_err(|e| e.to_string())?)?;
-    let runtime = Node::start(id, name, vault, save, PORT, true).await?;
+    let mut runtime = Node::start(id, name, vault, save, PORT, true).await?;
+    let events = app.clone();
+    runtime.on_change(Arc::new(move || {
+        let _ = events.emit("lan-changed", ());
+    }));
     runtime
         .node
         .publish(doc["revisions"].as_array().ok_or("缺少版本记录")?.clone())?;
@@ -127,6 +160,12 @@ pub async fn lan_pair(
 #[tauri::command]
 pub async fn lan_pull(state: State<'_, LanState>) -> Result<Vec<Value>, String> {
     node(&state)?.pull().await
+}
+
+#[tauri::command]
+pub fn lan_poll(state: State<'_, LanState>) -> Result<(), String> {
+    node(&state)?.request_poll();
+    Ok(())
 }
 
 fn vault_db(path: &std::path::Path) -> Result<rusqlite::Connection, String> {

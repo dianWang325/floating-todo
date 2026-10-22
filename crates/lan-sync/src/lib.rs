@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -192,6 +192,10 @@ struct Data {
     pairing: bool,
     pull_cursor: usize,
     discovery_cursor: usize,
+    outbound: BTreeSet<String>,
+    dirty: BTreeSet<String>,
+    hints: BTreeMap<String, String>,
+    sources: BTreeMap<String, (String, BTreeSet<String>)>,
 }
 impl Data {
     fn persist(&self, vault: &Vault) -> Result<()> {
@@ -205,9 +209,11 @@ impl Data {
             return Err("最多配对 16 台设备".into());
         }
         let mut vault = self.vault.clone();
+        let peer_id = peer.id.clone();
         vault.peers.insert(peer.id.clone(), peer);
         self.persist(&vault)?;
         self.vault = vault;
+        self.dirty.insert(peer_id);
         Ok(())
     }
     fn codes(&mut self) -> Value {
@@ -241,11 +247,24 @@ pub struct Node {
     client: reqwest::Client,
     port: u16,
     permits: Arc<tokio::sync::Semaphore>,
+    outbound_ready: Arc<tokio::sync::Notify>,
+    changed: Arc<tokio::sync::Notify>,
 }
 pub struct Runtime {
     pub node: Node,
     tasks: Vec<JoinHandle<()>>,
     mdns: Option<ServiceDaemon>,
+}
+impl Runtime {
+    pub fn on_change(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
+        let changed = self.node.changed.clone();
+        self.tasks.push(tokio::spawn(async move {
+            loop {
+                changed.notified().await;
+                callback();
+            }
+        }));
+    }
 }
 impl Drop for Runtime {
     fn drop(&mut self) {
@@ -323,6 +342,10 @@ impl Node {
                 pairing: false,
                 pull_cursor: 0,
                 discovery_cursor: 0,
+                outbound: BTreeSet::new(),
+                dirty: BTreeSet::new(),
+                hints: BTreeMap::new(),
+                sources: BTreeMap::new(),
             })),
             client: reqwest::Client::builder()
                 .no_proxy()
@@ -332,6 +355,8 @@ impl Node {
                 .map_err(|e| e.to_string())?,
             port,
             permits: Arc::new(tokio::sync::Semaphore::new(8)),
+            outbound_ready: Arc::new(tokio::sync::Notify::new()),
+            changed: Arc::new(tokio::sync::Notify::new()),
         };
         node.publish(vec![])?;
         let router = Router::new()
@@ -357,6 +382,14 @@ impl Node {
             tasks: vec![task],
             mdns: None,
         };
+        let notifications = node.clone();
+        runtime.tasks.push(tokio::spawn(async move {
+            loop {
+                notifications.outbound_ready.notified().await;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                notifications.send_notifications().await;
+            }
+        }));
         if discovery {
             let m = ServiceDaemon::new().map_err(|e| e.to_string())?;
             runtime.mdns = Some(m.clone());
@@ -419,10 +452,61 @@ impl Node {
         }
         let root = hex::encode(Sha256::digest(serde_json::to_vec(&hashes).unwrap()));
         let mut d = self.data.lock().unwrap();
+        let changed: Vec<_> = hashes
+            .iter()
+            .filter(|(id, hash)| d.hashes.get(*id) != Some(*hash))
+            .collect();
+        let recipients: Vec<_> = d
+            .vault
+            .peers
+            .keys()
+            .filter(|peer| {
+                changed.iter().any(|(id, hash)| {
+                    !d.sources
+                        .get(*id)
+                        .map_or(false, |(received_hash, sources)| {
+                            received_hash == *hash && sources.contains(*peer)
+                        })
+                })
+            })
+            .cloned()
+            .collect();
+        d.outbound.extend(recipients);
+        d.sources.retain(|id, _| !hashes.contains_key(id));
+        if !d.outbound.is_empty() {
+            self.outbound_ready.notify_one();
+        }
         d.revisions = records;
         d.hashes = hashes;
         d.root = root;
         Ok(())
+    }
+    async fn send_notifications(&self) {
+        let (peers, root) = {
+            let mut d = self.data.lock().unwrap();
+            if !d.enabled {
+                return;
+            }
+            let ids = std::mem::take(&mut d.outbound);
+            (
+                ids.iter()
+                    .filter_map(|id| d.vault.peers.get(id).cloned())
+                    .collect::<Vec<_>>(),
+                d.root.clone(),
+            )
+        };
+        // Fan out to EVERY eligible neighbor; four sockets at a time only bounds resources.
+        for chunk in peers.chunks(4) {
+            let mut tasks = tokio::task::JoinSet::new();
+            for p in chunk {
+                let (n, p, root) = (self.clone(), p.clone(), root.clone());
+                tasks.spawn(async move {
+                    let _ = n.rpc(&p, json!({"op":"changed","root":root})).await;
+                });
+            }
+            while tasks.join_next().await.is_some() {}
+        }
+        // A lost hint is repaired by anti-entropy polling, not an unbounded retry queue.
     }
     pub fn status(&self) -> Value {
         let mut d = self.data.lock().unwrap();
@@ -457,6 +541,9 @@ impl Node {
         v.peers.remove(id);
         d.persist(&v)?;
         d.vault = v;
+        d.dirty.remove(id);
+        d.hints.remove(id);
+        d.outbound.remove(id);
         d.pending.retain(|_, p| p.id != id);
         Ok(())
     }
@@ -498,12 +585,22 @@ impl Node {
             d.vault.peers.get(&id).cloned()
         };
         if let Some(mut p) = peer {
-            if p.url != url {
+            if p.url != url
+                || self
+                    .data
+                    .lock()
+                    .unwrap()
+                    .health
+                    .get(&id)
+                    .map_or(false, |h| h.failures > 0)
+            {
                 p.url = url.clone();
                 self.rpc(&p, json!({"op":"status"})).await?;
                 let mut d = self.data.lock().unwrap();
                 if d.vault.peers.get(&id).map(|x| &x.key) == Some(&p.key) {
                     d.put_peer(p)?;
+                    d.health.remove(&id);
+                    self.changed.notify_one();
                 }
             }
         }
@@ -690,6 +787,12 @@ impl Node {
             .await?;
         unseal(&key, &response, &p.id, &id, "response", &req)
     }
+    pub fn request_poll(&self) {
+        let mut d = self.data.lock().unwrap();
+        let ids: Vec<_> = d.vault.peers.keys().cloned().collect();
+        d.dirty.extend(ids);
+        self.changed.notify_one();
+    }
     pub async fn pull(&self) -> Result<Vec<Value>> {
         let peers = {
             let mut d = self.data.lock().unwrap();
@@ -706,7 +809,28 @@ impl Node {
                 d.pull_cursor = (offset + 2) % peers.len();
                 peers.truncate(2);
             }
-            peers
+            // Notification senders take priority, while ordinary polls retain rotation.
+            let mut urgent = d
+                .dirty
+                .iter()
+                .filter_map(|id| d.vault.peers.get(id))
+                .filter(|p| d.health.get(&p.id).map_or(true, |h| now() >= h.retry))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !urgent.is_empty() {
+                let offset = d.pull_cursor % urgent.len();
+                urgent.rotate_left(offset);
+            }
+            urgent.truncate(2);
+            for p in peers {
+                if urgent.len() < 2 && !urgent.iter().any(|q| q.id == p.id) {
+                    urgent.push(p);
+                }
+            }
+            for p in &urgent {
+                d.dirty.remove(&p.id);
+            }
+            urgent
         };
         // Two independent peers per pass: bounded work and fair service when one is offline.
         let mut tasks = tokio::task::JoinSet::new();
@@ -733,6 +857,20 @@ impl Node {
                     h.retry = 0;
                     h.error.clear();
                     h.last_success = now();
+                    for record in &r {
+                        let id = field(record, "revisionId")?.to_owned();
+                        let hash = hex::encode(Sha256::digest(record.to_string().as_bytes()));
+                        if d.sources.len() >= 4096 {
+                            d.sources.clear();
+                        }
+                        let entry = d
+                            .sources
+                            .entry(id)
+                            .or_insert_with(|| (hash.clone(), BTreeSet::new()));
+                        if entry.0 == hash {
+                            entry.1.insert(p.id.clone());
+                        }
+                    }
                     result.append(&mut r);
                 }
                 Err(e) => {
@@ -741,6 +879,13 @@ impl Node {
                     h.error = e;
                 }
             }
+        }
+        let d = self.data.lock().unwrap();
+        if d.dirty
+            .iter()
+            .any(|id| d.health.get(id).map_or(true, |h| now() >= h.retry))
+        {
+            self.changed.notify_one();
         }
         Ok(result)
     }
@@ -899,12 +1044,13 @@ async fn pair_finish(State(n): State<Node>, Json(v): Json<Value>) -> Response {
             url: p.url,
             key: hex::encode(&p.key),
         })?;
+        n.changed.notify_one();
         Ok(json!({"proof":proof(&p.key,&format!("complete:{}",p.context))}))
     })())
 }
 async fn read(State(n): State<Node>, Json(v): Json<Value>) -> Response {
     response((|| {
-        let d = n.data.lock().unwrap();
+        let mut d = n.data.lock().unwrap();
         if !d.enabled {
             return Err("同步已关闭".into());
         }
@@ -917,6 +1063,18 @@ async fn read(State(n): State<Node>, Json(v): Json<Value>) -> Response {
         let key = hex::decode(&p.key).map_err(|_| "无效凭据")?;
         let body = unseal(&key, &v, from, &d.id, "request", req)?;
         let result = match field(&body, "op")? {
+            "changed" => {
+                let root = field(&body, "root")?;
+                if root.len() != 64 || !root.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err("无效摘要".into());
+                }
+                if root != d.root && d.hints.get(from).map(String::as_str) != Some(root) {
+                    d.hints.insert(from.into(), root.into());
+                    d.dirty.insert(from.into());
+                    n.changed.notify_one();
+                }
+                json!({"ok":true})
+            }
             "status" => json!({"root":d.root}),
             "inventory" => {
                 let after = field(&body, "after")?;
@@ -1088,6 +1246,95 @@ mod tests {
             .await
             .is_err());
     }
+    #[tokio::test]
+    async fn notifications_reach_every_neighbor_exclude_sources_and_coalesce() {
+        let hub = device().await;
+        let a = device().await;
+        let b = device().await;
+        let c = device().await;
+        for peer in [&a, &b, &c] {
+            pair(&hub, peer, "fixed").await;
+        }
+        for peer in [&a, &b, &c] {
+            peer.node.data.lock().unwrap().dirty.clear();
+        }
+        hub.node.publish(vec![record(1)]).unwrap();
+        hub.node.publish(vec![record(1), record(2)]).unwrap();
+        assert_eq!(hub.node.data.lock().unwrap().outbound.len(), 3);
+        // Exercise the real background notifier, not only the explicit test helper.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if [&a, &b, &c]
+                    .iter()
+                    .all(|p| !p.node.data.lock().unwrap().dirty.is_empty())
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let id = hub.node.status()["id"].as_str().unwrap().to_string();
+        for peer in [&a, &b, &c] {
+            assert!(peer.node.data.lock().unwrap().dirty.contains(&id));
+        }
+        // A receiver must not echo newly saved data back to its source.
+        let incoming = a.node.pull().await.unwrap();
+        assert_eq!(incoming.len(), 2);
+        a.node.publish(incoming.clone()).unwrap();
+        assert!(a.node.data.lock().unwrap().outbound.is_empty());
+        a.node.publish(incoming).unwrap();
+        assert!(a.node.data.lock().unwrap().outbound.is_empty());
+        // Duplicate hint for an already consumed root does not wake another sync.
+        hub.node
+            .data
+            .lock()
+            .unwrap()
+            .outbound
+            .insert(a.node.status()["id"].as_str().unwrap().into());
+        hub.node.send_notifications().await;
+        assert!(a.node.data.lock().unwrap().dirty.is_empty());
+        // Simulate a lost hint: the periodic full-peer check still repairs divergence.
+        hub.node
+            .publish(vec![record(1), record(2), record(3)])
+            .unwrap();
+        hub.node.data.lock().unwrap().outbound.clear();
+        a.node.request_poll();
+        assert_eq!(a.node.pull().await.unwrap().len(), 1);
+        hub.node.request_poll();
+        assert_eq!(hub.node.data.lock().unwrap().dirty.len(), 3);
+        hub.node.pull().await.unwrap();
+        assert_eq!(hub.node.data.lock().unwrap().dirty.len(), 1);
+        hub.node.pull().await.unwrap();
+        assert!(hub.node.data.lock().unwrap().dirty.is_empty());
+    }
+    #[tokio::test]
+    async fn ring_relays_preserve_identity_and_stop_after_convergence() {
+        let a = device().await;
+        let b = device().await;
+        let c = device().await;
+        pair(&a, &b, "fixed").await;
+        pair(&b, &c, "fixed").await;
+        pair(&c, &a, "fixed").await;
+        a.node.publish(vec![record(7)]).unwrap();
+        a.node.send_notifications().await;
+        let records = b.node.pull().await.unwrap();
+        b.node.publish(records).unwrap();
+        let c_id = c.node.status()["id"].as_str().unwrap().to_string();
+        assert_eq!(b.node.data.lock().unwrap().outbound, BTreeSet::from([c_id]));
+        b.node.send_notifications().await;
+        // Both A and B can supply the same version in one concurrent pull.
+        let records = c.node.pull().await.unwrap();
+        c.node.publish(records).unwrap();
+        assert!(c.node.data.lock().unwrap().outbound.is_empty());
+        assert!(a.node.pull().await.unwrap().is_empty());
+        assert_eq!(
+            a.node.data.lock().unwrap().root,
+            c.node.data.lock().unwrap().root
+        );
+    }
+
     #[test]
     fn envelope_binds_identity_direction_and_request() {
         let key = [42; 32];

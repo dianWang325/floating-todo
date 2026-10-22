@@ -2,7 +2,9 @@
 
 <img src="docs/images/banner.svg" alt="悬浮待办 · Floating Todo" width="100%" />
 
-# 悬浮待办 · Floating Todo
+# 悬浮待办 · floating todo
+
+[简体中文](README.md) | [English](README.en.md)
 
 **一个常驻桌面、半透明、始终置顶的跨平台悬浮待办小组件**
 
@@ -12,8 +14,8 @@
 
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-2767c8)](#-下载安装)
 [![Tauri](https://img.shields.io/badge/built%20with-Tauri%202-ffc131?logo=tauri&logoColor=white)](https://tauri.app)
-[![Release](https://img.shields.io/badge/release-v0.3.1-success)](../../releases)
-[![Stars](https://img.shields.io/github/stars/BUG-gao/floating-todo?style=social)](../../stargazers)
+[![Release](https://img.shields.io/github/v/release/pisceskkk/floating-todo?include_prereleases)](../../releases)
+[![Stars](https://img.shields.io/github/stars/pisceskkk/floating-todo?style=social)](../../stargazers)
 
 </div>
 
@@ -107,11 +109,11 @@
 
 ### 局域网与 Tailscale 同步
 
-- 📡 **发现设备后直接同步**：在「设置 → 同步与备份 → 局域网与 Tailscale 同步」开启；真实局域网使用 mDNS，Tailscale／Headscale 使用本机客户端的节点列表，也可输入 IP 地址查找。
+- 📡 **发现设备后直接同步**：在「设置 → 同步与备份 → 局域网与 Tailscale 同步」开启；设备名称默认使用电脑名称；真实局域网使用 mDNS，Tailscale／Headscale 使用本机客户端的节点列表，也可输入 IP 地址查找。
 - 🔢 **两种短码配对**：6 位临时码每 60 秒切换，8 位固定码持久保存；输入对方任一种短码即可配对，支持刷新短码和单独撤销设备。
 - 🤝 **共享数据，保留冲突**：配对后合并双方全部待办数据，复用 WebDAV 的版本合并与冲突恢复；断线恢复后补齐历史，也能通过同时启用 WebDAV 的设备中继。
 - 🔐 **认证后加密传输**：短码通过 SPAKE2 建立配对凭据，数据使用 AES-GCM 加密；配对凭据加密保存在本机，包装密钥由系统凭据存储保管。
-- 🍃 **默认关闭，控制后台开销**：开启后每 3 秒检查同步，每轮最多并行处理两台设备；相同摘要不传输版本，失败节点退避，发现探测限制并发。
+- 🍃 **默认关闭，控制后台开销**：保存后主动通知所有需要更新的已配对邻居，合并重复通知并排除来源；每 60～75 秒兜底检查，拉取仍限制两台并发，相同摘要不传输版本，失败节点退避。
 
 当前为桌面端实验性功能，使用 IPv4 和 TCP 47831，需要允许系统防火墙与虚拟网络 ACL；自动发现不代表已经授权配对。操作、限制和原生实现验证见 [局域网同步说明](docs/lan-sync.md)。早期独立 demo 的数据保留在 [可行性报告](demos/lan-sync/reports/assessment.md)，不作为桌面版性能承诺。
 
@@ -131,6 +133,8 @@
 | 🍎 macOS (Intel) | `floating-todo_x.x.x_x64.dmg` | Intel 芯片 |
 | 🪟 Windows | `floating-todo_x.x.x_x64-setup.exe` | Win10/11 64 位 |
 
+应用包及安装器使用英文名称 **floating todo**；GitHub 下载附件统一使用 `floating-todo_` 前缀。macOS 安装后为 `floating todo.app`。从旧中文名称升级时，退出旧应用，将新应用拖入「应用程序」，再移除旧的 `悬浮待办.app`，避免同时启动两个副本。应用标识不变，原有待办数据与凭据继续使用。
+
 ## ⚠️ 重要：首次打开被系统拦截怎么办
 
 本应用**没有购买付费签名证书**（macOS 99 美元/年、Windows 也需付费证书）。
@@ -142,7 +146,7 @@
 若提示「已损坏」，先检查：
 
 ```bash
-codesign --verify --deep --strict --verbose=2 "/Applications/悬浮待办.app"
+codesign --verify --deep --strict --verbose=2 "/Applications/floating todo.app"
 ```
 
 若出现 `code has no resources but signature indicates they must be present`，说明包签名不完整。请使用修复后的构建产物，或从可信源码重新构建。删除隔离属性不会修复签名。
@@ -150,10 +154,10 @@ codesign --verify --deep --strict --verbose=2 "/Applications/悬浮待办.app"
 旧版本仅在确认来源与文件可信、且需要本机临时修复时，可先对完整 App 重新签名，再解除该 App 的下载隔离：
 
 ```bash
-codesign --force --sign - "/Applications/悬浮待办.app"
-codesign --verify --deep --strict --verbose=2 "/Applications/悬浮待办.app"
+codesign --force --sign - "/Applications/floating todo.app"
+codesign --verify --deep --strict --verbose=2 "/Applications/floating todo.app"
 # 仅在上面的签名校验成功后执行：
-xattr -dr com.apple.quarantine "/Applications/悬浮待办.app"
+xattr -dr com.apple.quarantine "/Applications/floating todo.app"
 ```
 
 重新签名仅证明签名后的包结构完整，不能验证下载来源。公开分发要免除未验证开发者拦截，需要 Developer ID 签名及 Apple 公证；参见 [Tauri macOS 签名文档](https://v2.tauri.app/distribute/sign/macos/)。
@@ -166,8 +170,8 @@ xattr -dr com.apple.quarantine "/Applications/悬浮待办.app"
 ## 🛠️ 从源码构建 / 参与开发
 
 ```bash
-# 前置：Node.js 18+、Rust（https://rustup.rs）
-git clone https://github.com/BUG-gao/floating-todo.git
+# 前置：Node.js 20+、Rust（https://rustup.rs）
+git clone https://github.com/pisceskkk/floating-todo.git
 cd floating-todo
 npm install
 npm run dev      # 开发模式（热重载）
@@ -175,6 +179,8 @@ npm run build    # 构建当前平台安装包
 ```
 
 发布版安装包由 **GitHub Actions** 在打 `v*` tag 时自动构建（macOS + Windows 双平台），见 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
+
+macOS 发布校验会只读挂载最终 DMG，并检查其中 `floating todo.app` 的名称、应用标识与完整签名。仅构建 DMG 时，Tauri 会清理中间 `.app`；校验不依赖该中间目录。
 
 前端回归验证：
 

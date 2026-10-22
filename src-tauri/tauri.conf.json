@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "悬浮待办",
+  "productName": "floating todo",
   "version": "0.4.0-rc.6",
   "identifier": "com.gaopengfei.floating-todo",
   "build": {

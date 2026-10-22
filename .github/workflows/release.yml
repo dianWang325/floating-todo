@@ -52,28 +52,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "悬浮待办 ${{ github.ref_name }}"
+          releaseName: "floating todo ${{ github.ref_name }}"
           releaseBody: "下载下方对应平台安装包。macOS 首次打开若提示「已损坏」或「身份不明的开发者」，请见 README 的安装说明。Windows 首次运行若被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可。"
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
-      - name: Verify macOS application signature
+      - name: Verify application inside macOS installer
         if: matrix.platform == 'macos-latest'
         shell: bash
-        run: |
-          set -euo pipefail
-          apps=()
-          while IFS= read -r -d '' app; do
-            apps+=("$app")
-          done < <(find src-tauri/target -type d -path '*/release/bundle/macos/*.app' -print0)
-          if [ "${#apps[@]}" -eq 0 ]; then
-            echo "No macOS application bundle found"
-            exit 1
-          fi
-          for app in "${apps[@]}"; do
-            codesign --verify --deep --strict --verbose=2 "$app"
-          done
+        run: bash scripts/verify-macos-dmg.sh src-tauri/target
 
       - name: Windows application smoke test
         if: matrix.platform == 'windows-latest'
@@ -93,7 +81,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: 规整安装包文件名（去掉中文产品名被清洗后留下的下划线前缀）
+      - name: Normalize installer filenames and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -101,8 +89,8 @@ jobs:
           gh api "repos/${{ github.repository }}/releases/tags/$tag" \
             --jq '.assets[] | "\(.id) \(.name)"' | while read -r id name; do
             case "$name" in
-              _*) gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" \
-                    -f name="floating-todo${name}" && echo "renamed $name -> floating-todo${name}" ;;
+              floating.todo_*|"floating todo_"*) gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" \
+                    -f name="floating-todo_${name#*_}" && echo "renamed $name -> floating-todo_${name#*_}" ;;
             esac
           done
           gh release edit "$tag" --repo "${{ github.repository }}" --draft=false

@@ -125,3 +125,20 @@ test('LAN persistence failure prevents next fetch until durable retry succeeds',
   remote.failStorage = true; await assert.rejects(a.persist()); await assert.rejects(a.syncLan()); assert.equal(pulls, 0);
   remote.failStorage = false; await a.syncLan(); assert.equal(pulls, 1);
 });
+
+test('LAN notification during an active pull schedules a second pass', async () => {
+  const remote = server();
+  const store = new SyncStore({ invoke: remote.bridge(), native: true });
+  await store.init(snapshot()); store.doc.lan = { enabled: true, name: 'test' };
+  let release, pulls = 0;
+  store.invoke = async name => {
+    if (name === 'lan_pull') { pulls++; if (pulls === 1) return new Promise(resolve => { release = resolve; }); return []; }
+  };
+  const running = store.syncLan();
+  while (!release) await new Promise(resolve => setImmediate(resolve));
+  store.scheduleLan();
+  release([]); await running;
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(pulls, 2);
+  clearTimeout(store.lanTimer);
+});

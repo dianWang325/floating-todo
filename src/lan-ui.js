@@ -5,7 +5,7 @@ export function openLanSettings(store) {
   overlay.innerHTML = `<div class="settings sync-settings"><h2>局域网与 Tailscale 同步</h2>
     <p class="sync-help">开启后发现附近设备，配对后共享双方全部待办数据。两台设备都需开启同步；Tailscale 网络需允许 TCP 47831。</p>
     <label class="set-row">开启局域网同步<input type="checkbox" data-lan-enabled ${store.doc.lan?.enabled ? 'checked' : ''}></label>
-    <label>设备名称<input class="lan-input" data-lan-name maxlength="40" value="${esc(store.doc.lan?.name || '我的待办')}" ${store.doc.lan?.enabled ? 'disabled' : ''}></label>
+    <label>设备名称<input class="lan-input" data-lan-name maxlength="40" value="${esc(store.doc.lan?.name === '我的待办' ? '' : store.doc.lan?.name || '')}" ${store.doc.lan?.enabled ? 'disabled' : ''}></label>
     <button class="data-btn" data-lan-save>应用设置</button>
     <p class="sync-help" data-lan-status></p>
     <section class="settings-group"><h3>本机配对码</h3><p class="sync-help">仅向你要同步的设备提供。短码只用于建立配对，重置短码不会撤销已配对设备。</p>
@@ -20,6 +20,12 @@ export function openLanSettings(store) {
     <p class="sync-error" data-lan-message role="alert"></p><button class="link-btn" data-lan-close>关闭</button></div>`;
   document.body.append(overlay);
   const message = text => { overlay.querySelector('[data-lan-message]').textContent = text; };
+  const nameInput = overlay.querySelector('[data-lan-name]');
+  let nameEdited = false;
+  nameInput.addEventListener('input', () => { nameEdited = true; });
+  if (!nameInput.value && store.native) store.lanDeviceName().then(name => {
+    if (overlay.isConnected && !nameEdited) nameInput.value = name;
+  });
   let busy = false, refreshing = false;
   async function refresh() {
     if (!overlay.isConnected || refreshing) return;
@@ -46,7 +52,7 @@ export function openLanSettings(store) {
     if (b.hasAttribute('data-lan-conflicts')) { clearInterval(timer); overlay.remove(); openConflicts(store); return; }
     busy = true; b.disabled = true; message('');
     try {
-      if (b.hasAttribute('data-lan-save')) await store.configureLan(overlay.querySelector('[data-lan-enabled]').checked, overlay.querySelector('[data-lan-name]').value.trim() || '我的待办');
+      if (b.hasAttribute('data-lan-save')) await store.configureLan(overlay.querySelector('[data-lan-enabled]').checked, overlay.querySelector('[data-lan-name]').value.trim());
       if (b.hasAttribute('data-lan-rotate') || b.hasAttribute('data-lan-fixed')) await store.invoke('lan_rotate', { fixed: b.hasAttribute('data-lan-fixed') });
       if (b.hasAttribute('data-lan-revoke')) await store.invoke('lan_revoke', { id: b.dataset.lanRevoke });
       if (b.hasAttribute('data-lan-discover')) await store.invoke('lan_discover', { url: overlay.querySelector('[data-lan-url]').value.trim() });

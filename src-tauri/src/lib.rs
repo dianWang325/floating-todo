@@ -114,8 +114,8 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
-            lan::lan_start, lan::lan_stop, lan::lan_status, lan::lan_codes, lan::lan_rotate,
-            lan::lan_revoke, lan::lan_discover, lan::lan_pair, lan::lan_pull,
+            lan::lan_device_name, lan::lan_start, lan::lan_stop, lan::lan_status, lan::lan_codes, lan::lan_rotate,
+            lan::lan_revoke, lan::lan_discover, lan::lan_pair, lan::lan_pull, lan::lan_poll,
             sync_storage::storage_load,
             sync_storage::storage_save,
             sync_storage::sync_set_password,
