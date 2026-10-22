@@ -39,7 +39,7 @@ export function createClassificationUI({ getState, save, render, openSettings })
     const project = getState().projects.find(p => p.id === task.projectId);
     if (!tags.length && !project) return '';
     return `<button class="task-categories" data-class-ui="task" data-task="${esc(task.id)}" aria-label="编辑项目与标签：${esc([project?.name, ...tags.map(t => t.name)].filter(Boolean).join('、'))}" title="${esc([project ? '项目：' + project.name : '', ...tags.map(t => '#' + t.name)].filter(Boolean).join(' · '))}">
-      ${tags.slice(0, 4).map(t => `<span title="${esc(t.name)}">${dot(t.color)}</span>`).join('')}
+      ${tags.slice(0, 4).map(t => `<span class="tag-chip" title="${esc(t.name)}">${dot(t.color)}<span class="tag-name">${esc(t.name)}</span></span>`).join('')}
       ${tags.length > 4 ? `<span class="tag-overflow">+${tags.length - 4}</span>` : ''}
       ${!tags.length && project ? `<span class="project-caption">${esc(project.name)}</span>` : ''}
     </button>`;
