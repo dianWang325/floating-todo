@@ -1172,3 +1172,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .lan-peer { padding: 8px 0; overflow-wrap: anywhere; }
 [data-lan-candidates] .data-btn { margin-bottom: 6px; overflow-wrap: anywhere; }
 [data-lan-codes] { font-variant-numeric: tabular-nums; font-size: 13px; }
+
+/* A persistent indicator survives normal list rerenders. */
+.update-available [data-act="settings"] { position: relative; }
+.update-available [data-act="settings"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e46b42;
+}

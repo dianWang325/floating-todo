@@ -7,6 +7,7 @@ import { SyncStore } from './sync-store.js';
 import { dateInZone, shiftDate, setTaskOrder } from './sync-model.js';
 import { openSyncSettings, confirmImport } from './sync-ui.js';
 import { openLanSettings } from './lan-ui.js';
+import { createUpdateChecker } from './update-ui.js';
 let syncStore = null;
 let memoSaveTimer = null;
 
@@ -1018,6 +1019,12 @@ function openDetailEditor(id, day) {
 
 /* ---------------- 设置面板 ---------------- */
 
+const updateChecker = createUpdateChecker({
+  invoke: TAURI?.core?.invoke ? name => TAURI.core.invoke(name) : null,
+  openExternal,
+  notice: text => classificationUI.showNotice(text),
+});
+
 function openSettings() {
   const overlay = document.createElement("div");
   overlay.className = "overlay";
@@ -1068,6 +1075,7 @@ function openSettings() {
         <button class="data-btn" data-s="import">${ICONS.upload}<span>导入备份</span></button>
       </div>
     </section>
+    <section class="settings-group" data-update-panel></section>
     <section class="settings-group" aria-labelledby="settings-notifications-title">
       <h3 id="settings-notifications-title">通知</h3>
       <div class="set-row"><span>本机到点提醒</span><button class="switch ${s.remindersEnabled !== false ? "on" : ""}" data-s="remindersEnabled" aria-label="本机到点提醒"></button></div>
@@ -1145,6 +1153,7 @@ function openSettings() {
     state.settings.customBg = hexToRgb(e.target.value);
     applyWindowChrome(); save();
   });
+  updateChecker.mount(overlay.querySelector("[data-update-panel]"));
   // 异步同步开机自启动开关的真实状态
   (async () => {
     try {
@@ -1340,6 +1349,8 @@ syncStore.notice = text => classificationUI.showNotice(text);
 syncStore.canSync = () => !classificationUI.isComposing() && !memoSaveTimer && !composerEditId && !recurEditId &&
   !document.querySelector('.overlay:not(.sync-overlay)');
 syncStore.start();
+updateChecker.start();
+window.addEventListener('beforeunload', () => updateChecker.stop());
 window.addEventListener('beforeunload', () => syncStore.stop());
 
 app.addEventListener('focusout', e => { if (e.target.id === 'memo-input' && memoSaveTimer) save(); });

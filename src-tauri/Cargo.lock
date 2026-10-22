@@ -1209,13 +1209,14 @@ dependencies = [
 
 [[package]]
 name = "floating-todo"
-version = "0.4.0-rc.5"
+version = "0.4.0-rc.6"
 dependencies = [
  "floating-todo-lan",
  "keyring",
  "reqwest 0.12.28",
  "roxmltree",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

@@ -6,6 +6,7 @@ use tauri::{
 use tauri_plugin_dialog::DialogExt;
 mod sync_storage;
 mod lan;
+mod updates;
 
 #[cfg(target_os = "windows")]
 mod windows_desktop;
@@ -119,6 +120,8 @@ pub fn run() {
             sync_storage::storage_save,
             sync_storage::sync_set_password,
             sync_storage::dav_request,
+            updates::check_for_updates,
+            updates::installed_version,
             export_data,
             import_data,
             set_desktop_mode,
