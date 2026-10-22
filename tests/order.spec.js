@@ -81,6 +81,7 @@ test('long lists scroll at the drag edge and compact mode supports sorting', asy
   await expect.poll(() => page.locator('.list').evaluate(el => el.scrollTop)).toBeGreaterThan(20);
   await page.keyboard.press('Escape'); await page.mouse.up();
   await page.setViewportSize({ width: 250, height: 560 });
+  await expect(page.locator('html')).toHaveClass(/compact/);
   await page.locator('.list').evaluate(el => { el.scrollTop = 0; });
   await drag(page, '0', '1');
   expect((await read(page)).itemsByDay.today.slice(0, 2).map(t => t.id)).toEqual(['1','0']);
