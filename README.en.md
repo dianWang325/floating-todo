@@ -84,21 +84,19 @@ The application interface and illustrated previews currently use Chinese. This E
 
 ### LAN and Tailscale synchronization
 
-- Enable Settings → Sync and backup → LAN and Tailscale sync (`局域网与 Tailscale 同步`) on both devices. The default device name comes from the computer name; custom names are retained. Discovery uses mDNS on physical LANs and the local Tailscale CLI's peer list on Tailscale/Headscale networks. Manual IPv4 lookup is also available.
-- Pair with either a six-digit temporary code, refreshed every 60 seconds, or a persistent eight-digit code. Codes can be refreshed/reset, and individual peers can be revoked.
-- Pairing authorizes merging both devices' complete task datasets. The same revision and conflict model used by WebDAV preserves concurrent versions and catches up after reconnection. A device with both transports enabled can relay revisions between them.
-- SPAKE2 establishes pairing credentials; AES-GCM encrypts synchronization traffic. Pairing credentials are encrypted locally, with their wrapping key held in the operating system credential store.
-- Disabled by default. Saved changes notify every paired neighbor that needs them, coalescing duplicates and excluding peers that supplied the changes. A randomized 60–75 second fallback check covers all peers in batches of up to two concurrent pulls. Matching summaries avoid transferring revisions; unavailable peers back off.
-- **Experimental:** requires IPv4 and inbound TCP 47831, with appropriate OS firewall and virtual-network ACL permissions. Discovery alone does not grant trust. Long-running cross-internet testing and independent security review remain pending.
-
-See the [LAN sync guide and native validation results](docs/lan-sync.md) (Chinese). The earlier standalone demo's [feasibility report](demos/lan-sync/reports/assessment.md) is historical evidence, not a desktop performance guarantee.
+- **Device discovery:** enable Settings → Sync and backup → LAN and Tailscale sync (`局域网与 Tailscale 同步`) on both devices to find peers on your LAN or Tailscale/Headscale network. Devices use their computer names by default; manual IPv4 lookup is also available.
+- **Code pairing:** enter the other device's six-digit temporary code or persistent eight-digit code. Temporary codes refresh every 60 seconds; fixed codes survive restarts. Refresh codes or revoke individual pairings from settings.
+- **Shared task data:** pairing merges both devices' complete tasks, projects, tags, habit records, ordering, and memo. Concurrent edits retain their versions for review and recovery in settings.
+- **Automatic synchronization:** saved changes notify paired devices, periodic checks catch missed updates, and synchronization resumes after reconnection. Enable WebDAV alongside LAN sync to pass updates between devices using either connection.
+- **Encrypted transfer:** data is encrypted between paired devices. Pairing credentials are encrypted locally, with their key stored in macOS Keychain or Windows Credential Manager.
+- **Optional setup:** disabled by default. Allow local-network access and inbound TCP 47831. Tailscale/Headscale requires a signed-in local client and network rules that allow connections between devices. See the [LAN sync usage guide](docs/lan-sync.md#使用) (Chinese).
 
 ### Update checks
 
-- Checks [GitHub Releases](https://github.com/pisceskkk/floating-todo/releases) five seconds after startup and every six hours while running. A new version displays a prompt and a dot on the settings button.
-- Settings → Application updates (`应用更新`) shows the installed version even offline, lets you retry a check, and opens the appropriate release for manual download and installation.
-- Stable versions check stable releases; prerelease versions also check newer prereleases. Semantic version comparison excludes drafts and invalid version tags.
-- Checks use GitHub's public API without a token. Network errors do not interrupt task editing and can be inspected in settings. No separate update manifest is required.
+- **New version alerts:** checks after startup and every six hours while running. A new version displays a prompt and a dot on the settings button.
+- **Installed version:** view your current version even offline in Settings → Application updates (`应用更新`), or check for updates manually.
+- **Download access:** open the matching [Release page](https://github.com/pisceskkk/floating-todo/releases) from settings, download the installer for your platform, and install the new version.
+- **Update channels:** stable versions receive stable updates; RC versions also receive newer RC releases. If a check fails, view the reason in settings and retry later.
 
 ## Download and install
 
@@ -196,9 +194,7 @@ floating-todo/
 
 - [ ] macOS notarization and Windows code signing
 - [x] Optional WebDAV sync, offline queues, and recoverable conflicts
-- [x] LAN/Tailscale discovery, dual-code pairing, and conflict demo validation
-- [x] Native desktop LAN/Tailscale settings, encrypted transport, and conflict recovery
-- [ ] Long-running cross-internet validation and independent security audit
+- [x] LAN/Tailscale discovery, code pairing, encrypted sync, and conflict recovery
 - [ ] Customizable global shortcuts
 - [ ] Richer natural-language parsing, including weekly recurrence and relative dates
 
