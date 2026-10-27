@@ -5,10 +5,17 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing source tag to build (leave empty when dispatching from a tag)"
+        required: false
+        type: string
 
 jobs:
   tests:
     uses: ./.github/workflows/tests.yml
+    with:
+      source_ref: ${{ inputs.release_tag || github.ref }}
     permissions:
       contents: read
 
@@ -29,6 +36,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -51,11 +60,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "floating todo ${{ github.ref_name }}"
+          tagName: ${{ inputs.release_tag || github.ref_name }}
+          releaseName: "floating todo ${{ inputs.release_tag || github.ref_name }}"
           releaseBody: "下载下方对应平台安装包。macOS 首次打开若提示「已损坏」或「身份不明的开发者」，请见 README 的安装说明。Windows 首次运行若被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可。"
           releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
       - name: Verify application inside macOS installer
@@ -82,11 +91,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
       - name: Normalize installer filenames and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${{ github.ref_name }}"
+          tag="${{ inputs.release_tag || github.ref_name }}"
           gh api "repos/${{ github.repository }}/releases/tags/$tag" \
             --jq '.assets[] | "\(.id) \(.name)"' | while read -r id name; do
             case "$name" in

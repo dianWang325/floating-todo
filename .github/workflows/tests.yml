@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -14,14 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -34,6 +42,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --manifest-path crates/lan-sync/Cargo.toml --locked
 
@@ -43,6 +53,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
