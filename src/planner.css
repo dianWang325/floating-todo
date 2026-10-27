@@ -1,0 +1,69 @@
+.planner-launch { display: flex; gap: 8px; padding: 0 18px 10px; }
+.planner-launch button { flex: 1; border: 1px solid rgba(var(--accent-rgb), .16); border-radius: 10px; padding: 7px 10px; background: rgba(var(--accent-rgb), .07); color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
+.planner-launch span { float: right; }
+.planner-overlay { position: fixed; inset: 12px; z-index: 500; color: var(--text); border-radius: 20px; background: rgb(var(--panel-top)); box-shadow: var(--surface-shadow); overflow: hidden; }
+.planner-shell { height: 100%; display: flex; flex-direction: column; padding: 22px; gap: 16px; box-sizing: border-box; }
+.planner-header { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.planner-header h2 { font-size: 22px; margin: 0; letter-spacing: -.5px; }
+.planner-header p, .planner-help, .planner-footer { color: var(--text-secondary); font-size: 12px; line-height: 1.65; margin: 5px 0 0; }
+.planner-shell button, .planner-shell input, .planner-shell select, .planner-shell textarea { font: inherit; color: var(--text); font-size: 13px; }
+.planner-shell button { cursor: pointer; border: 1px solid rgba(var(--segment-bg), .12); background: rgba(var(--control-bg), var(--control-alpha)); border-radius: 8px; padding: 7px 11px; }
+.planner-shell button:hover { background: rgba(var(--accent-rgb), .12); }
+.planner-shell button:disabled { opacity: .5; cursor: default; }
+.planner-shell :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.planner-tabs { display: flex; gap: 5px; border-bottom: 1px solid rgba(var(--segment-bg), .09); padding-bottom: 10px; flex-shrink: 0; }
+.planner-tabs button[aria-pressed="true"] { color: var(--accent); background: rgba(var(--accent-rgb), .12); border-color: transparent; }
+.planner-content { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
+.planner-calendar-layout { display: grid; grid-template-columns: minmax(270px, 1.15fr) minmax(240px, 1fr); gap: 24px; }
+.planner-month-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.planner-month-nav h3 { flex: 1; margin: 0; font-size: 18px; }
+.planner-weekdays, .planner-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.planner-weekdays { text-align: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.planner-grid .planner-day { padding: 9px 2px; min-height: 60px; text-align: center; border-color: transparent; }
+.planner-day span { font-weight: 600; font-size: 14px; }
+.planner-day small { display: block; font-size: 9px; color: var(--text-secondary); margin-top: 5px; min-height: 12px; white-space: nowrap; }
+.planner-day.outside { opacity: .4; }
+.planner-day.today span { color: var(--accent); }
+.planner-day[aria-pressed="true"] { background: rgba(var(--accent-rgb), .13); border-color: var(--accent); }
+.planner-agenda h3, .planner-history h3, .planner-reminders h3 { margin: 0 0 12px; font-size: 16px; }
+.planner-agenda h3 small, .planner-history h3 small { margin-left: 12px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.planner-add, .planner-editor { display: grid; gap: 9px; border: 1px solid rgba(var(--segment-bg), .1); background: rgba(var(--control-bg), .12); padding: 12px; border-radius: 12px; margin-bottom: 16px; }
+.planner-shell label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; min-width: 0; }
+.planner-shell input, .planner-shell select, .planner-shell textarea { min-width: 0; box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid rgba(var(--segment-bg), .16); background: rgb(var(--panel-top)); border-radius: 6px; }
+.planner-shell textarea { resize: vertical; min-height: 60px; }
+.planner-form-row { display: flex; gap: 8px; }
+.planner-form-row > * { flex: 1; min-width: 0; }
+.planner-add button[type="submit"], .planner-editor button[type="submit"] { color: white; background: var(--accent); border-color: transparent; }
+.planner-task { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid rgba(var(--segment-bg), .09); }
+.planner-task-body { flex: 1; min-width: 0; }
+.planner-task strong { display: block; font-size: 13px; overflow-wrap: anywhere; font-weight: 500; }
+.planner-task small { display: block; font-size: 11px; line-height: 1.6; color: var(--text-secondary); margin-top: 4px; }
+.planner-task p { font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.planner-check { min-width: 30px; }
+.planner-task.is-done .planner-check { color: #399267; }
+.planner-empty { text-align: center; padding: 32px 12px; color: var(--text-secondary); font-size: 13px; line-height: 1.8; }
+.planner-filters { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.planner-filters label { flex: 1; min-width: 125px; }
+.planner-summary { display: flex; gap: 30px; padding: 22px 0 10px; }
+.planner-summary strong { font-size: 28px; font-weight: 600; color: var(--accent); }
+.planner-summary span { display: block; font-size: 12px; font-weight: 400; color: var(--text-secondary); padding-top: 5px; }
+.planner-history section { margin: 20px 0; }
+.planner-editor h4 { margin: 0; }
+.planner-editor details { font-size: 12px; }
+.planner-reminders > p { font-size: 13px; line-height: 1.8; }
+.planner-shell .planner-enable { display: flex; align-items: center; margin: 14px 0; }
+.planner-enable input { width: auto; }
+.planner-status { margin: 0; font-size: 12px; color: var(--danger); }
+.planner-status:empty { display: none; }
+.planner-footer { border-top: 1px solid rgba(var(--segment-bg), .09); padding-top: 8px; font-size: 11px; flex-shrink: 0; }
+.planner-open .resize { display: none; }
+.planner-open .classification-notice { z-index: 600; }
+@media (max-width: 650px) {
+  .planner-shell { padding: 14px; gap: 10px; }
+  .planner-calendar-layout { grid-template-columns: 1fr; gap: 20px; }
+  .planner-header h2 { font-size: 18px; }
+  .planner-header p { display: none; }
+  .planner-header button { padding: 7px; font-size: 11px; }
+  .planner-grid .planner-day { min-height: 48px; padding: 5px 0; }
+  .planner-tabs button { flex: 1; padding: 7px; }
+}

@@ -81,6 +81,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - name: Normalize installer filenames and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,4 +94,8 @@ jobs:
                     -f name="floating-todo_${name#*_}" && echo "renamed $name -> floating-todo_${name#*_}" ;;
             esac
           done
-          gh release edit "$tag" --repo "${{ github.repository }}" --draft=false
+          notes="docs/releases/${tag}.md"
+          if [ -f "$notes" ]; then
+            gh release edit "$tag" --repo "${{ github.repository }}" --notes-file "$notes"
+          fi
+          gh release edit "$tag" --repo "${{ github.repository }}" --draft=false --title "悬浮待办 $tag"

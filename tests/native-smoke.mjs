@@ -61,8 +61,20 @@ try {
   await page.waitForFunction(size => document.documentElement.dataset.windowMode === 'panel' && innerWidth === size.width && innerHeight === size.height, original);
   assert.equal(await page.locator('.row .title').filter({ hasText: '验证原生悬浮栏' }).count(), 1);
   await page.screenshot({ path: join(output, 'expanded.png'), omitBackground: true });
+  await page.locator('[data-act="planner"]').click();
+  await page.waitForFunction(() => innerWidth > 460);
+  await page.waitForSelector('.planner-grid');
+  await page.screenshot({ path: join(output, 'calendar.png'), omitBackground: true });
+  await page.locator('[data-p-form="add"] [name="title"]').fill('验证原生日历');
+  await page.locator('[data-p-form="add"] button[type="submit"]').click();
+  await page.getByRole('button', { name: '完成 验证原生日历', exact: true }).click();
+  await page.locator('[data-mode="history"]').click();
+  assert.equal(await page.locator('.planner-history strong').filter({ hasText: '验证原生日历' }).count(), 1);
+  await page.screenshot({ path: join(output, 'history.png'), omitBackground: true });
+  await page.getByRole('button', { name: '关闭日历与回顾', exact: true }).click();
+  await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, original);
   assert.deepEqual(errors, []);
-  console.log('PASS: native window collapse, quick capture, count update, and full-size restoration');
+  console.log('PASS: native mini/capture, calendar resizing, completion history, and geometry restoration');
 } catch (error) {
   logs.push(error.stack || String(error));
   if (page) {

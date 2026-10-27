@@ -32,6 +32,7 @@ test('complete workflow: capture, dates, filters, rename, color, deletion, reloa
   await page.locator(`[data-filter-project="${s.projects[0].id}"]`).click();
   await page.locator('[data-act="day"][data-day="today"]').click();
   await expect(page.locator('.row')).toHaveCount(1); await expect(page.locator('.row .tag-dot')).toHaveCount(2);
+  await expect(page.locator('.row .tag-name')).toHaveText(['设计', '重要']);
   await expect(page.locator('.row')).toHaveAttribute('data-project-color', '');
   await manager(page);
   await page.locator('[data-entry-name]').fill('网站升级'); await page.locator('[data-entry-name]').press('Enter');

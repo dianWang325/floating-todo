@@ -1,4 +1,4 @@
-export const RELEASES_URL = 'https://github.com/pisceskkk/floating-todo/releases';
+export const RELEASES_URL = 'https://github.com/dianWang325/floating-todo/releases';
 const INTERVAL = 6 * 60 * 60 * 1000;
 
 export function createUpdateChecker({ invoke, openExternal, notice }) {
@@ -60,7 +60,7 @@ export function createUpdateChecker({ invoke, openExternal, notice }) {
     panel.innerHTML = `<h3>应用更新</h3>
       <div class="set-row"><span>当前安装版本</span><span data-installed-version style="user-select:text;overflow-wrap:anywhere"></span></div>
       <p data-update-status role="status" style="font-size:12px;overflow-wrap:anywhere"></p>
-      <p style="font-size:11px;color:var(--text-secondary)">更新来源：pisceskkk/floating-todo Releases</p>
+      <p style="font-size:11px;color:var(--text-secondary)">更新来源：dianWang325/floating-todo Releases</p>
       <div class="set-row" style="gap:8px">
         <button class="data-btn" data-update-check>检查更新</button>
         <button class="data-btn" data-update-open>查看 Releases</button>

@@ -11,7 +11,7 @@ async function boot(page, fail = false) {
         if (name !== 'check_for_updates') return;
         window.updateCalls++;
         if (window.updateFail) throw new Error('无法连接 GitHub，请检查网络后重试');
-        return { currentVersion: '0.4.0-rc.5', version: '0.4.0-rc.10', url: 'https://github.com/pisceskkk/floating-todo/releases/tag/v0.4.0-rc.10' };
+        return { currentVersion: '0.4.0-rc.5', version: '0.4.0-rc.10', url: 'https://github.com/dianWang325/floating-todo/releases/tag/v0.4.0-rc.10' };
       } },
       opener: { openUrl: async url => window.openedUrls.push(url) },
     };
@@ -27,7 +27,7 @@ test('automatically discovers releases, persists indicator across renders and op
   await expect(page.locator('[data-update-status]')).toContainText('0.4.0-rc.10');
   await expect(page.locator('[data-installed-version]')).toHaveText('0.4.0-rc.5');
   await page.locator('[data-update-open]').click();
-  expect(await page.evaluate(() => window.openedUrls)).toEqual(['https://github.com/pisceskkk/floating-todo/releases/tag/v0.4.0-rc.10']);
+  expect(await page.evaluate(() => window.openedUrls)).toEqual(['https://github.com/dianWang325/floating-todo/releases/tag/v0.4.0-rc.10']);
   await page.locator('[data-s="close"]').click();
   await expect(page.locator('body')).toHaveClass(/update-available/);
 });

@@ -8,6 +8,8 @@ import { dateInZone, shiftDate, setTaskOrder } from './sync-model.js';
 import { openSyncSettings, confirmImport } from './sync-ui.js';
 import { openLanSettings } from './lan-ui.js';
 import { createUpdateChecker } from './update-ui.js';
+import { createPlanner } from './planner-ui.js';
+import { createReminderRunner } from './reminders.js';
 let syncStore = null;
 let memoSaveTimer = null;
 
@@ -185,6 +187,8 @@ function toggleItem(id, day) {
   const it = arr.find((i) => i.id === id);
   if (!it) return;
   it.completed = !it.completed;
+  if (it.completed) { it.completedAt = Date.now(); it.completedDate = todayStr(); }
+  else { delete it.completedAt; delete it.completedDate; delete it.archivedAt; }
   state.itemsByDay[day] = stableSort(arr);
   save();
 }
@@ -210,8 +214,9 @@ function moveItem(id, from, to) {
   save();
 }
 function clearCompleted(day) {
-  state.itemsByDay[day] = state.itemsByDay[day].filter((i) => !i.completed || !classificationUI.filtered(i));
+  for (const item of state.itemsByDay[day]) if (item.completed && classificationUI.filtered(item)) item.archivedAt = Date.now();
   save();
+  state = syncStore.refresh(false);
 }
 
 /* 常驻「每天」待办 */
@@ -241,6 +246,7 @@ function toggleRecurring(id) {
   const today = todayStr();
   if (!it.completed) {
     it.completed = true;
+    it.completedAt = Date.now();
     it.notified = true;
     if (it.lastDone === today) {
       // 今天已计入连胜
@@ -252,6 +258,7 @@ function toggleRecurring(id) {
     it.lastDone = today;
   } else {
     it.completed = false;
+    delete it.completedAt;
     if (it.lastDone === today) {
       it.streak = Math.max(0, (it.streak || 0) - 1);
       it.lastDone = it.streak > 0 ? yesterdayStr() : null;
@@ -471,6 +478,7 @@ function render() {
       <button class="icon-btn" data-act="settings" title="设置">${ICONS.gear}</button>
     </div>`;
 
+    html += `<div class="planner-launch"><button data-act="planner">日历与回顾 <span>↗</span></button><button data-act="reminder-center" title="查看提醒与稍后提醒">${ICONS.clock} 提醒</button></div>`;
     html += `<div class="day-picker">`;
     DAYS.forEach((d, i) => {
       html += `<div class="day-seg ${state.selectedDay === d ? "sel" : ""}" data-act="day" data-day="${d}">
@@ -512,7 +520,7 @@ function render() {
   if (!compact) {
     const visibleCompleted = list.filter(it => it.completed).length;
     if (visibleCompleted > 0) {
-      html += `<div class="clear-bar"><button data-act="clear" data-day="${day}">${ICONS.trash}<span>清除已完成（${visibleCompleted}）</span></button></div>`;
+      html += `<div class="clear-bar"><button data-act="clear" data-day="${day}">${ICONS.trash}<span>归档已完成（${visibleCompleted}）</span></button></div>`;
     }
     // 输入框
     const editing = composerEditId;
@@ -831,6 +839,8 @@ app.addEventListener("click", (e) => {
     case "quick-close": closeQuickCapture(); break;
     case "quick-submit": commitQuick(); break;
     case "settings": openSettings(); break;
+    case "planner": planner.open(); break;
+    case "reminder-center": planner.open('reminders'); break;
     case "memotoggle": state.memo.expanded = !state.memo.expanded; save(); render(); break;
     case "menu": openRowMenu(id, day, el); break;
   }
@@ -1240,33 +1250,21 @@ async function ensureNotifyPermission() {
   }
 }
 
+let reminderError = '';
+const runReminders = createReminderRunner({
+  getDoc: () => syncStore.doc,
+  permission: ensureNotifyPermission,
+  send: notification => TAURI.notification.sendNotification(notification),
+  persist: () => syncStore.persist(),
+  onDelivered: () => { planner.refresh(); },
+  onError: message => {
+    if (message && message !== reminderError) classificationUI.showNotice(message);
+    reminderError = message;
+  },
+});
 async function checkReminders() {
   rollOverIfNeeded();
-  if (state.settings.remindersEnabled === false) return;
-  const now = nowHHMM();
-  const due = [];
-  let changed = false;
-  const scan = (it) => {
-    if (it.time && !it.completed && !it.notified && it.time <= now) {
-      it.notified = true;
-      due.push(it);
-      changed = true;
-    }
-  };
-  state.itemsByDay.today.forEach(scan);
-  state.recurringItems.forEach(scan);
-  if (changed) save();
-  if (due.length) {
-    const ok = await ensureNotifyPermission();
-    if (ok) {
-      due.forEach((it) =>
-        TAURI.notification.sendNotification({
-          title: "悬浮待办 · 到点提醒",
-          body: `${it.time}　${it.title}`,
-        })
-      );
-    }
-  }
+  await runReminders();
 }
 
 /* ---------------- 窗口尺寸 / 缩放 ---------------- */
@@ -1332,6 +1330,21 @@ TAURI?.event?.listen?.("toggle-desktop-mode", () => {
   save();
   render();
 });
+
+const planner = createPlanner({
+  store: syncStore, nativeWindow: appWindow, windowApi: TAURI?.window,
+  beforeOpen: () => { save(); closeMenu(); classificationUI.closeAutocomplete(); },
+  notify: text => classificationUI.showNotice(text),
+});
+window.addEventListener('todo-test-notification', async () => {
+  try {
+    if (!await ensureNotifyPermission()) throw new Error('请在系统设置中允许“悬浮待办”的通知');
+    await TAURI.notification.sendNotification({ title: '悬浮待办 · 测试通知', body: '通知已开启，请保持应用在托盘运行。' });
+    classificationUI.showNotice('测试通知已发送');
+  } catch (error) { classificationUI.showNotice(error.message || String(error)); }
+});
+window.addEventListener('focus', checkReminders);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); });
 
 /* ---------------- 启动 ---------------- */
 

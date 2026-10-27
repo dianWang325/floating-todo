@@ -2,8 +2,8 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const RELEASES_API: &str = "https://api.github.com/repos/pisceskkk/floating-todo/releases";
-const RELEASES_URL: &str = "https://github.com/pisceskkk/floating-todo/releases";
+const RELEASES_API: &str = "https://api.github.com/repos/dianWang325/floating-todo/releases";
+const RELEASES_URL: &str = "https://github.com/dianWang325/floating-todo/releases";
 
 #[derive(Deserialize)]
 struct Release {
