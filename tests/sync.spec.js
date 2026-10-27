@@ -29,6 +29,32 @@ async function boot(page, document = newDocument()) {
   await page.goto('/'); await expect(page.locator('#main-input')).toBeVisible();
 }
 async function syncSettings(page) { await page.locator('[data-act="settings"]').click(); await page.locator('[data-s="sync"]').click(); }
+
+test('native reminder waits for IPC success before persisting its delivery receipt', async ({ page }) => {
+  const document = newDocument();
+  writeRevision(document, 'task', 'notify', { ...task('notify', '验证原生通知'), time: '00:00' });
+  await boot(page, document);
+  await page.evaluate(() => {
+    const original = window.__TAURI__.core.invoke;
+    window.nativeNotificationFails = true; window.nativeNotifications = [];
+    window.__TAURI__.notification = { isPermissionGranted: async () => true, sendNotification: () => { throw Error('void wrapper must not be used'); } };
+    window.__TAURI__.core.invoke = async (name, args) => {
+      if (name === 'plugin:notification|notify') {
+        if (window.nativeNotificationFails) throw Error('native notification failed');
+        window.nativeNotifications.push(args.options); return;
+      }
+      return original(name, args);
+    };
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect(page.locator('.classification-notice')).toContainText('native notification failed');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('test-native-db')).local.reminders?.delivered || {})).toEqual({});
+  await page.evaluate(() => { window.nativeNotificationFails = false; window.dispatchEvent(new Event('focus')); });
+  await expect.poll(() => page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('test-native-db')).local.reminders?.delivered || {}).length)).toBe(1);
+  expect(await page.evaluate(() => window.nativeNotifications.length)).toBe(1);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect(await page.evaluate(() => window.nativeNotifications.length)).toBe(1);
+});
 test('native persistence tracks first edit, WebDAV settings synchronize, secrets stay out of backups', async ({ page }) => {
   await boot(page); await page.locator('#main-input').fill('同步任务'); await page.locator('[data-act="submit"]').click();
   await page.reload(); await expect(page.locator('.row .title')).toHaveText('同步任务');

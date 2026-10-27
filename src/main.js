@@ -1251,10 +1251,17 @@ async function ensureNotifyPermission() {
 }
 
 let reminderError = '';
+function sendSystemNotification(options) {
+  // The convenience sendNotification API returns void. Await native IPC so
+  // permission/platform failures cannot silently consume a pending reminder.
+  return window.__TAURI_INTERNALS__
+    ? TAURI.core.invoke('plugin:notification|notify', { options })
+    : TAURI.notification.sendNotification(options);
+}
 const runReminders = createReminderRunner({
   getDoc: () => syncStore.doc,
   permission: ensureNotifyPermission,
-  send: notification => TAURI.notification.sendNotification(notification),
+  send: sendSystemNotification,
   persist: () => syncStore.persist(),
   onDelivered: () => { planner.refresh(); },
   onError: message => {
@@ -1339,7 +1346,7 @@ const planner = createPlanner({
 window.addEventListener('todo-test-notification', async () => {
   try {
     if (!await ensureNotifyPermission()) throw new Error('请在系统设置中允许“悬浮待办”的通知');
-    await TAURI.notification.sendNotification({ title: '悬浮待办 · 测试通知', body: '通知已开启，请保持应用在托盘运行。' });
+    await sendSystemNotification({ title: '悬浮待办 · 测试通知', body: '通知已开启，请保持应用在托盘运行。' });
     classificationUI.showNotice('测试通知已发送');
   } catch (error) { classificationUI.showNotice(error.message || String(error)); }
 });
