@@ -1,0 +1,73 @@
+name: Verify draft installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing draft release whose built installers should be verified
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Download and verify the immutable Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid release tag' }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*x64-setup.exe' --dir installer
+          if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
+          $asset = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" --jq '.assets[] | select(.name | endswith("x64-setup.exe")) | {name,digest}' | ConvertFrom-Json
+          $file = Get-Item -LiteralPath (Join-Path installer $asset.name)
+          $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ("sha256:$hash" -ne $asset.digest) { throw 'Installer checksum mismatch' }
+          $destination = Join-Path $env:RUNNER_TEMP 'FloatingTodoVerify'
+          $process = Start-Process -FilePath $file.FullName -ArgumentList @('/S', "/D=$destination") -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Installation failed' }
+          $exe = Join-Path $destination 'floating-todo.exe'
+          if ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -ne $env:RELEASE_TAG.Substring(1)) { throw 'Installed version mismatch' }
+          "VERIFIED_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Native maximize, timelines, completion and restoration checks
+        shell: pwsh
+        run: ./tests/native-smoke.ps1 -Executable $env:VERIFIED_EXE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-windows-installer
+          path: test-results/native/
+          retention-days: 7
+
+  publish:
+    needs: windows
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish verified installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The original build tested all native libraries and verified both
+          # macOS installers; this job reruns the repaired UI verifier against
+          # the exact Windows installer, without rebuilding or retagging it.
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' > assets.txt
+          grep -q '_aarch64.dmg$' assets.txt
+          grep -q '_x64.dmg$' assets.txt
+          grep -q '_x64-setup.exe$' assets.txt
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "docs/releases/$RELEASE_TAG.md" --title "悬浮待办 $RELEASE_TAG" --draft=false
