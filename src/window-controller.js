@@ -3,6 +3,7 @@ import { PANEL_MIN, PANEL_DEFAULT, BAR_SIZE, CAPTURE_SIZE, isCompact, anchoredBo
 export function createWindowController({ api, moveToScreen, onChange, onError }) {
   const native = api?.getCurrentWindow?.();
   let mode = 'panel';
+  let panelWasMaximized = false;
   let transitioning = false;
   let lastFullSize = { ...PANEL_DEFAULT };
   let resize = null;
@@ -46,6 +47,12 @@ export function createWindowController({ api, moveToScreen, onChange, onError })
       let before;
       transitioning = true;
       try {
+        if (native && next !== 'panel' && await native.isMaximized?.()) {
+          panelWasMaximized = true;
+          await native.unmaximize();
+          const restored = await native.innerSize(), scale = await native.scaleFactor();
+          lastFullSize = { width: restored.width / scale, height: restored.height / scale };
+        }
         before = await frame();
         const monitor = native ? await api.currentMonitor() : null;
         const size = next === 'panel' ? lastFullSize : next === 'mini' ? BAR_SIZE : CAPTURE_SIZE;
@@ -57,6 +64,7 @@ export function createWindowController({ api, moveToScreen, onChange, onError })
           await native.setMinSize(new api.LogicalSize(min.width, min.height));
           await native.setResizable(next === 'panel');
           await setBounds(bounds);
+          if (next === 'panel' && panelWasMaximized) { await native.maximize(); panelWasMaximized = false; }
         }
         return true;
       } catch (error) {

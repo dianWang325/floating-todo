@@ -112,6 +112,7 @@ export function validateRevision(r) {
       for (const key of ['completedAt', 'archivedAt']) if (p[key] != null && (!Number.isSafeInteger(p[key]) || p[key] < 0)) throw new Error('任务时间格式不正确');
       if (p.completedDate != null && !validDate(p.completedDate)) throw new Error('完成日期格式不正确');
       if (p.remindLeadMinutes != null && (!Number.isInteger(p.remindLeadMinutes) || p.remindLeadMinutes < 0 || p.remindLeadMinutes > 10080)) throw new Error('提前提醒时间格式不正确');
+      if (p.durationMinutes != null && (!Number.isInteger(p.durationMinutes) || p.durationMinutes < 5 || p.durationMinutes > 1440)) throw new Error('任务时长需要在 5 分钟到 24 小时之间');
       break;
     case 'projects': case 'tags':
       if (p.id !== r.entityId || !text(p.name) || !p.name.trim() || !/^#[0-9a-f]{6}$/i.test(p.color)) throw new Error('同步分类格式不正确'); break;
@@ -139,7 +140,7 @@ export function mergeRevisions(doc, incoming) {
 }
 function taskPayload(task, kind, date) {
   const payload = { id: task.id, kind, title: task.title, detail: task.detail || '', time: task.time || null, completed: kind === 'daily' ? false : !!task.completed, createdAt: task.createdAt || 0, scheduledDate: kind === 'daily' ? null : isoDate(task.scheduledDate || date), projectId: task.projectId || null, tagIds: [...(task.tagIds || [])].sort(), ...(task.legacyStreak ? { legacyStreak: task.legacyStreak } : {}) };
-  for (const key of ['completedAt', 'completedDate', 'archivedAt', 'remindLeadMinutes']) if (task[key] != null && (kind !== 'daily' || key === 'remindLeadMinutes')) payload[key] = task[key];
+  for (const key of ['completedAt', 'completedDate', 'archivedAt', 'remindLeadMinutes', 'durationMinutes']) if (task[key] != null && (kind !== 'daily' || ['remindLeadMinutes', 'durationMinutes'].includes(key))) payload[key] = task[key];
   return payload;
 }
 function viewEntities(view) {

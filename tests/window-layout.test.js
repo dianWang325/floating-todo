@@ -26,7 +26,7 @@ for (const scale of [1, 1.25, 1.5, 2]) {
 }
 
 test('collapse and expand preserve the right edge at noninteger DPI and negative monitor coordinates', () => {
-  const frame = { x: -900, y: 90, width: 510, height: 840, scale: 1.5 };
+  const frame = { x: -900, y: 90, width: 630, height: 1020, scale: 1.5 };
   const mini = anchoredBounds(frame, BAR_SIZE);
   assert.equal(mini.x + mini.width, frame.x + frame.width);
   assert.equal(mini.y, frame.y);
@@ -36,5 +36,5 @@ test('collapse and expand preserve the right edge at noninteger DPI and negative
 test('expanding near a work-area edge keeps the panel accessible', () => {
   const frame = { x: -200, y: 1000, width: 188, height: 68, scale: 1 };
   const area = { position: { x: -1920, y: 0 }, size: { width: 1920, height: 1040 } };
-  assert.deepEqual(anchoredBounds(frame, PANEL_DEFAULT, area), { x: -352, y: 480, width: 340, height: 560, scale: 1 });
+  assert.deepEqual(anchoredBounds(frame, PANEL_DEFAULT, area), { x: -432, y: 360, width: 420, height: 680, scale: 1 });
 });

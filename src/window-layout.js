@@ -1,6 +1,6 @@
 export const PANEL_MIN = { width: 220, height: 180 };
-export const PANEL_DEFAULT = { width: 340, height: 560 };
-export const PANEL_MAX = { width: 460, height: 760 };
+export const PANEL_DEFAULT = { width: 420, height: 680 };
+export const PANEL_MAX = { width: 7680, height: 4320 };
 // Sizes include the 12px transparent shadow gutter on each edge.
 export const BAR_SIZE = { width: 188, height: 68 };
 export const CAPTURE_SIZE = { width: 340, height: 252 };

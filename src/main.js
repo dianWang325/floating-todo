@@ -475,6 +475,7 @@ function render() {
       <div class="titles"><h1>悬浮待办</h1><p>${sub}</p></div>
       <div class="spacer"></div>
       <button class="count-pill ${cnt === 0 ? "zero" : ""}" data-act="collapse" title="收起为悬浮栏" aria-label="${cnt} 件待办，收起为悬浮栏">${cnt > 99 ? '99+' : cnt}</button>
+      <button class="icon-btn" data-act="maximize" title="最大化 / 还原" aria-label="最大化或还原窗口">□</button>
       <button class="icon-btn" data-act="settings" title="设置">${ICONS.gear}</button>
     </div>`;
 
@@ -839,6 +840,7 @@ app.addEventListener("click", (e) => {
     case "quick-close": closeQuickCapture(); break;
     case "quick-submit": commitQuick(); break;
     case "settings": openSettings(); break;
+    case "maximize": appWindow?.toggleMaximize().catch(error => classificationUI.showNotice(`窗口最大化失败：${error}`)); break;
     case "planner": planner.open(); break;
     case "reminder-center": planner.open('reminders'); break;
     case "memotoggle": state.memo.expanded = !state.memo.expanded; save(); render(); break;
@@ -1281,6 +1283,13 @@ async function expandWindow() {
   if (await windowUI.setMode('panel')) app.querySelector('[data-act="collapse"]')?.focus({ preventScroll: true });
 }
 
+document.addEventListener('pointerdown', event => {
+  const handle = event.target.closest('.resize');
+  if (handle && planner.active && event.button === 0) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    appWindow?.startResizeDragging(handle.dataset.dir).catch(() => {});
+  }
+}, true);
 document.querySelectorAll(".resize").forEach((h) => {
   if (h.dataset.dir === 'SouthWest') { windowUI.attachResize(h); return; }
   h.addEventListener("mousedown", (e) => {
@@ -1311,6 +1320,7 @@ window.addEventListener('blur', () => {
 /* ---------------- 全局快捷键：快速捕获 ---------------- */
 
 TAURI?.event?.listen?.("quick-capture", async () => {
+  if (planner.active) await planner.close();
   closeMenu();
   document.querySelector(".overlay")?.remove();
   if (windowUI.floating) { await openQuickCapture(); return; }

@@ -77,9 +77,50 @@ export function toggleTask(doc, id, date, now = Date.now()) {
   return updateTask(doc, id, { completed, ...(completed ? { completedAt: now, completedDate: dateInZone(doc.sync.timeZone, new Date(now)) } : {}) });
 }
 
-export function createTask(doc, { title, scheduledDate, time = null, projectId = null, remindLeadMinutes = 0 }) {
+export function createTask(doc, { title, scheduledDate, time = null, projectId = null, remindLeadMinutes = 0, durationMinutes = 30 }) {
   const id = crypto.randomUUID();
   if (!title.trim()) throw new Error('请填写任务标题');
-  writeRevision(doc, 'task', id, { id, title: title.trim(), scheduledDate, time, projectId, remindLeadMinutes, tagIds: [], detail: '', kind: 'one_off', completed: false, createdAt: Date.now() });
+  writeRevision(doc, 'task', id, { id, title: title.trim(), scheduledDate, time, projectId, remindLeadMinutes, durationMinutes, tagIds: [], detail: '', kind: 'one_off', completed: false, createdAt: Date.now() });
   return id;
+}
+
+export function calendarRange(date, view) {
+  if (view === 'month') return monthDates(date.slice(0, 7));
+  const start = view === 'week' ? shiftDate(date, -(new Date(date + 'T12:00:00Z').getUTCDay() + 6) % 7) : date;
+  return Array.from({ length: view === 'week' ? 7 : view === 'three' ? 3 : 1 }, (_, i) => shiftDate(start, i));
+}
+
+export const minutesOfDay = time => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
+export const formatMinutes = value => `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+
+export function timelineItems(doc, date, current = currentEntities(doc)) {
+  const rows = [];
+  for (const origin of [shiftDate(date, -1), date]) {
+    for (const task of tasksOnDate(doc, origin, current)) {
+      if (!task.time) continue;
+      const offset = origin === date ? 0 : -1440;
+      const start = minutesOfDay(task.time) + offset;
+      const end = start + (task.durationMinutes || 30);
+      if (end <= 0 || start >= 1440) continue;
+      rows.push({ ...task, displayDate: date, start: Math.max(0, start), end: Math.min(1440, end), continuesBefore: start < 0, continuesAfter: end > 1440 });
+    }
+  }
+  return layoutTimedTasks(rows);
+}
+
+// Partition connected overlapping intervals, then give every task in a group
+// the same column width. Touching endpoints do not count as overlap.
+export function layoutTimedTasks(tasks) {
+  const sorted = tasks.map(t => ({ ...t })).sort((a, b) => a.start - b.start || b.end - a.end || a.id.localeCompare(b.id));
+  let group = [], ends = [], groupEnd = -1;
+  const finish = () => { for (const task of group) task.lanes = ends.length; group = []; ends = []; };
+  for (const task of sorted) {
+    if (group.length && task.start >= groupEnd) finish();
+    if (!group.length) groupEnd = -1;
+    let lane = ends.findIndex(end => end <= task.start);
+    if (lane < 0) lane = ends.length;
+    ends[lane] = task.end; task.lane = lane; group.push(task);
+    groupEnd = Math.max(groupEnd, task.end);
+  }
+  finish(); return sorted;
 }

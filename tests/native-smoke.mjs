@@ -46,6 +46,10 @@ try {
     await api.getCurrentWindow().setFocus();
   });
   const original = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  await page.locator('[data-act="maximize"]').click();
+  await page.waitForFunction(async () => window.__TAURI__.window.getCurrentWindow().isMaximized());
+  await page.locator('[data-act="maximize"]').click();
+  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isMaximized());
   const count = Number(await page.locator('[data-act="collapse"]').textContent());
   await page.locator('[data-act="collapse"]').click();
   await page.waitForFunction(() => document.documentElement.dataset.windowMode === 'mini' && innerWidth === 188 && innerHeight === 68);
@@ -64,17 +68,32 @@ try {
   await page.locator('[data-act="planner"]').click();
   await page.waitForFunction(() => innerWidth > 460);
   await page.waitForSelector('.planner-grid');
+  await page.locator('[data-p="maximize"]').click();
+  await page.waitForFunction(async () => window.__TAURI__.window.getCurrentWindow().isMaximized());
+  await page.locator('[data-p="maximize"]').click();
+  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isMaximized());
   await page.screenshot({ path: join(output, 'calendar.png'), omitBackground: true });
+  await page.locator('[data-view="day"]').click();
+  assert.equal(await page.locator('.time-day-canvas').count(), 1);
+  await page.locator('[data-p="new"]').click();
   await page.locator('[data-p-form="add"] [name="title"]').fill('验证原生日历');
+  await page.locator('[data-p-form="add"] [name="time"]').fill('14:00');
+  await page.locator('[data-p-form="add"] [name="duration"]').fill('90');
   await page.locator('[data-p-form="add"] button[type="submit"]').click();
-  await page.getByRole('button', { name: '完成 验证原生日历', exact: true }).click();
+  assert.equal(await page.locator('.time-block').filter({ hasText: '验证原生日历' }).count(), 1);
+  await page.locator('.time-block').filter({ hasText: '验证原生日历' }).getByRole('button', { name: '完成 验证原生日历', exact: true }).click();
+  await page.locator('[data-view="three"]').click();
+  assert.equal(await page.locator('.time-day-canvas').count(), 3);
+  await page.locator('[data-view="week"]').click();
+  assert.equal(await page.locator('.time-day-canvas').count(), 7);
+  await page.screenshot({ path: join(output, 'week.png'), omitBackground: true });
   await page.locator('[data-mode="history"]').click();
   assert.equal(await page.locator('.planner-history strong').filter({ hasText: '验证原生日历' }).count(), 1);
   await page.screenshot({ path: join(output, 'history.png'), omitBackground: true });
   await page.getByRole('button', { name: '关闭日历与回顾', exact: true }).click();
   await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, original);
   assert.deepEqual(errors, []);
-  console.log('PASS: native mini/capture, calendar resizing, completion history, and geometry restoration');
+  console.log('PASS: native maximize/restore, mini/capture, day/three-day/week timelines, completion history, and geometry restoration');
 } catch (error) {
   logs.push(error.stack || String(error));
   if (page) {
