@@ -108,9 +108,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           tag="${{ inputs.release_tag || github.ref_name }}"
-          gh api "repos/${{ github.repository }}/releases/tags/$tag" \
-            --jq '.assets[] | "\(.id) \(.name)"' | while read -r id name; do
+          gh release view "$tag" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[] | "\(.apiUrl | split("/") | last) \(.name)"' | while read -r id name; do
             case "$name" in
               floating.todo_*|"floating todo_"*) gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" \
                     -f name="floating-todo_${name#*_}" && echo "renamed $name -> floating-todo_${name#*_}" ;;
@@ -161,7 +162,10 @@ jobs:
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid release tag' }
           gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*x64-setup.exe' --dir installer
           if ($LASTEXITCODE -ne 0) { throw 'Installer download failed' }
-          $asset = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" --jq '.assets[] | select(.name | endswith("x64-setup.exe")) | {name,digest}' | ConvertFrom-Json
+          $assetApi = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[] | select(.name | endswith("x64-setup.exe")) | .apiUrl'
+          if ($LASTEXITCODE -ne 0 -or -not $assetApi) { throw 'Cannot resolve draft installer' }
+          $asset = gh api $assetApi --jq '{name,digest}' | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read installer checksum' }
           $file = Get-Item -LiteralPath (Join-Path installer $asset.name)
           $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ("sha256:$hash" -ne $asset.digest) { throw 'Installer checksum mismatch' }
@@ -199,7 +203,7 @@ jobs:
           # The original build tested all native libraries and verified both
           # macOS installers; this job reruns the repaired UI verifier against
           # the exact Windows installer, without rebuilding or retagging it.
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' > assets.txt
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > assets.txt
           grep -q '_aarch64.dmg$' assets.txt
           grep -q '_x64.dmg$' assets.txt
           grep -q '_x64-setup.exe$' assets.txt
