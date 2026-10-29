@@ -65,7 +65,7 @@ try {
   await page.locator('[data-p="collection"][data-id=""]').click();
   await page.locator('[data-p="close"]').click();
   await page.waitForSelector('[data-act="collapse"]');
-  assert.equal(await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().isDecorated()), false);
+  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isDecorated(), null, { polling: 100 });
   await page.evaluate(async () => {
     const api = window.__TAURI__.window;
     await window.__TAURI__.core.invoke('set_window_screen_position', { x: 80, y: 80 });
