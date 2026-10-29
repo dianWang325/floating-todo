@@ -37,10 +37,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"
-            args: "--target aarch64-apple-darwin"
-          - platform: "macos-latest"
-            args: "--target x86_64-apple-darwin"
           - platform: "windows-latest"
             args: ""
     runs-on: ${{ matrix.platform }}
@@ -56,8 +52,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install frontend dependencies
         run: npm ci
@@ -72,15 +66,10 @@ jobs:
         with:
           tagName: ${{ inputs.release_tag || github.ref_name }}
           releaseName: "floating todo ${{ inputs.release_tag || github.ref_name }}"
-          releaseBody: "下载下方对应平台安装包。macOS 首次打开若提示「已损坏」或「身份不明的开发者」，请见 README 的安装说明。Windows 首次运行若被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可。"
+          releaseBody: "下载下方 Windows x64 安装包。"
           releaseDraft: true
           prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
           args: ${{ matrix.args }}
-
-      - name: Verify application inside macOS installer
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        run: bash scripts/verify-macos-dmg.sh src-tauri/target
 
       - name: Windows application smoke test
         if: matrix.platform == 'windows-latest'
@@ -148,7 +137,7 @@ jobs:
           $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BUILD_RUN_ID" | ConvertFrom-Json
           if ($run.head_branch -ne $env:RELEASE_TAG) { throw 'Build run does not match source tag' }
           $jobs = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:BUILD_RUN_ID/jobs" | ConvertFrom-Json
-          foreach ($name in @('tests / test', 'tests / native-lan', 'release (macos-latest, --target aarch64-apple-darwin)', 'release (macos-latest, --target x86_64-apple-darwin)')) {
+          foreach ($name in @('tests / test', 'tests / native-lan')) {
             if (@($jobs.jobs | Where-Object { $_.name -eq $name -and $_.conclusion -eq 'success' }).Count -ne 1) { throw "Missing original validation: $name" }
           }
           $windows = $jobs.jobs | Where-Object name -eq 'release (windows-latest)'
@@ -200,11 +189,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The original build tested all native libraries and verified both
-          # macOS installers; this job reruns the repaired UI verifier against
+          # The original Windows build tested its native libraries; this job
+          # reruns the repaired UI verifier against
           # the exact Windows installer, without rebuilding or retagging it.
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > assets.txt
-          grep -q '_aarch64.dmg$' assets.txt
-          grep -q '_x64.dmg$' assets.txt
           grep -q '_x64-setup.exe$' assets.txt
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "docs/releases/$RELEASE_TAG.md" --title "悬浮待办 $RELEASE_TAG" --draft=false
