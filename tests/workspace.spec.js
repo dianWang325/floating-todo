@@ -1,0 +1,67 @@
+import { test, expect } from '@playwright/test';
+import { newDocument, writeRevision, dateInZone } from '../src/sync-model.js';
+
+async function boot(page) {
+  await page.setViewportSize({ width: 1450, height: 940 });
+  const doc = newDocument(); doc.local.settings = { appearance: 'light', clickThrough: true };
+  writeRevision(doc, 'projects', 'old', { id: 'old', name: '原有合集', color: '#d77c44' });
+  writeRevision(doc, 'task', 'task', { id: 'task', title: '原有任务', detail: '', kind: 'one_off', scheduledDate: dateInZone(), time: '09:00', completed: false, createdAt: Date.now(), projectId: 'old', tagIds: [] });
+  await page.addInitScript(doc => {
+    if (!localStorage.getItem('floating-todo/v3-preview')) localStorage.setItem('floating-todo/v3-preview', JSON.stringify(doc));
+  }, doc);
+  await page.goto('/'); await expect(page.locator('.workspace-sidebar')).toBeVisible();
+}
+
+test('startup opens calendar workspace; existing collections filter every calendar view', async ({ page }) => {
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await boot(page);
+  await expect(page.locator('#panel')).toHaveAttribute('inert', '');
+  await page.locator('[data-p="collection"][data-id="old"]').click();
+  for(const view of ['day','three','week','month']) {
+    await page.locator(`[data-view="${view}"]`).click();
+    await expect(page.locator(view==='month'?'.month-previews':'.time-block').filter({hasText:'原有任务'})).toHaveCount(1);
+  }
+  await page.screenshot({path:'test-results/workspace-month.png'});
+  await page.locator('[data-p="collection"][data-id="none"]').click();
+  await expect(page.locator('.month-previews')).toHaveCount(0);
+  await page.reload();await expect(page.locator('.workspace-sidebar')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('create, rename, recolor and remove a collection without losing its tasks', async ({ page }) => {
+  await boot(page);
+  await page.getByRole('button',{name:'新建合集',exact:true}).click();
+  await page.locator('.collection-editor [name="name"]').fill('学习');
+  await page.getByRole('button',{name:'保存合集',exact:true}).click();
+  await expect(page.locator('.workspace-collection[aria-pressed="true"]')).toContainText('学习');
+  await page.locator('.planner-add [name="title"]').fill('学习计划');
+  await page.locator('.planner-add [name="time"]').fill('10:00');
+  await page.locator('.planner-add [type="submit"]').click();
+  await expect(page.locator('.planner-task').filter({hasText:'学习计划'})).toHaveCount(1);
+  await page.getByRole('button',{name:'管理当前合集'}).click();
+  await page.locator('.collection-editor [name="name"]').fill('读书');
+  await page.locator('.collection-editor [name="color"]').fill('#55aa77');
+  await page.getByRole('button',{name:'保存合集',exact:true}).click();
+  await expect(page.locator('.workspace-collection[aria-pressed="true"]')).toContainText('读书');
+  await page.reload();
+  await page.locator('.workspace-collection').filter({hasText:'读书'}).click();
+  await page.getByRole('button',{name:'管理当前合集'}).click();
+  await page.getByRole('button',{name:'删除合集',exact:true}).click();
+  await page.getByRole('button',{name:'确认删除合集，保留全部任务'}).click();
+  await expect(page.locator('.workspace-collection[aria-pressed="true"]')).toContainText('未分类');
+  await expect(page.locator('.planner-task').filter({hasText:'学习计划'})).toHaveCount(1);
+  await page.locator('[data-p="close"]').click();
+  await expect(page.locator('#main-input')).toBeVisible();
+  await page.locator('[data-act="planner"]').click();
+  await expect(page.locator('.workspace-sidebar')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.workspace-sidebar')).toBeVisible();
+});
+
+test('workspace sidebar and settings remain usable at small sizes', async ({ page }) => {
+  await boot(page);await page.setViewportSize({width:620,height:800});
+  expect(await page.locator('.planner-overlay').evaluate(e=>e.scrollWidth>e.clientWidth+1)).toBe(false);
+  await page.getByRole('button',{name:'⚙ 设置与同步'}).click();
+  await expect(page.locator('#startup-view')).toBeVisible();
+  await page.screenshot({path:'test-results/workspace-small.png'});
+});

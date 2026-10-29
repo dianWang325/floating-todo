@@ -1,18 +1,21 @@
 import { currentEntities, dateInZone, shiftDate } from './sync-model.js';
-import { tasksOnDate, completionHistory, monthDates, toggleTask, createTask, updateTask, taskEvents, calendarRange, timelineItems, formatMinutes, minutesOfDay } from './planner-model.js';
+import { tasksOnDate, completionHistory, monthDates, toggleTask, createTask, updateTask, taskEvents, calendarRange, timelineItems, formatMinutes, minutesOfDay, layoutTimedTasks } from './planner-model.js';
+import { collections, saveCollection, removeCollection, matchesCollection } from './collections.js';
 import { snoozeReminder } from './reminders.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const leads = value => [0, 5, 10, 15, 30, 60, 1440].map(n => `<option value="${n}" ${n === value ? 'selected' : ''}>${n ? `提前 ${n === 1440 ? '1 天' : n + ' 分钟'}` : '到点提醒'}</option>`).join('');
 
 // One authoritative store: expanding the existing window avoids competing SQLite writers.
-export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowApi }) {
+export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowApi, onModeChange = () => {} }) {
   let host, mode = 'calendar', date, month, from, to, query = '', project = '', busy = false, editing = null, restoreSize, restorePosition, restoreMaximized = false, previousFocus, opening = false;
   let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null;
   const emptyDraft = () => ({ title: '', time: '', duration: '30', lead: '0', project: '' });
-  let addDraft = emptyDraft(), editDraft = null;
+  let addDraft = emptyDraft(), editDraft = null, selectedCollection = '', collectionEditor = null, deletingCollection = false;
+  const selectedTasks = (day, current) => tasksOnDate(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc));
+  const selectedTimeline = (day, current) => layoutTimedTasks(timelineItems(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc)));
   const today = () => dateInZone(store.doc.sync.timeZone);
-  const projects = value => `<option value="">${value === undefined ? '全部项目' : '无项目'}</option>` + [...currentEntities(store.doc).values()].filter(r => r.entityType === 'projects' && !r.deleted).map(r => `<option value="${esc(r.entityId)}" ${r.entityId === value ? 'selected' : ''}>${esc(r.payload.name)}</option>`).join('');
+  const projects = value => `<option value="">${value === undefined ? '全部合集' : '未分类'}</option>` + [...currentEntities(store.doc).values()].filter(r => r.entityType === 'projects' && !r.deleted).map(r => `<option value="${esc(r.entityId)}" ${r.entityId === value ? 'selected' : ''}>${esc(r.payload.name)}</option>`).join('');
   const stamp = t => t.completedAt ? new Intl.DateTimeFormat('zh-CN', { timeZone: store.doc.sync.timeZone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(t.completedAt)) : '旧记录：完成时间未知';
   const weekday = d => new Intl.DateTimeFormat('zh-CN', { timeZone: 'UTC', weekday: 'short' }).format(new Date(d + 'T12:00:00Z'));
   const persistPrefs = () => {
@@ -22,6 +25,8 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   function captureDrafts() {
     const add = host?.querySelector('[data-p-form="add"]'), edit = host?.querySelector('[data-p-form="edit"]');
     if (add) addDraft = Object.fromEntries(new FormData(add));
+    const collection = host?.querySelector('[data-p-form="collection"]');
+    if (collection && collectionEditor) collectionEditor = { ...collectionEditor, ...Object.fromEntries(new FormData(collection)) };
     if (edit) editDraft = { ...Object.fromEntries(new FormData(edit)), id: editing };
   }
 
@@ -33,14 +38,28 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     </article>`;
   }
 
+  function sidebar() {
+    const entries = collections(store.doc), current = currentEntities(store.doc);
+    const count = id => [...current.values()].filter(r => r.entityType === 'task' && !r.deleted && !r.payload.completed && matchesCollection(r.payload, id, store.doc)).length;
+    const item = (id, name, color) => `<button class="workspace-collection" data-p="collection" data-id="${esc(id)}" aria-pressed="${selectedCollection === id}" title="${esc(name)}">${color ? `<i style="background:${color}"></i>` : '<span>▤</span>'}<span>${esc(name)}</span><small>${count(id)}</small></button>`;
+    return `<aside class="workspace-sidebar" aria-label="合集侧边栏"><div class="workspace-brand"><span>✓</span><strong>悬浮待办</strong></div>
+      <nav class="workspace-nav" aria-label="主导航">${[['calendar','▦','日历'],['history','◷','完成记录'],['reminders','♧','提醒中心']].map(([key,icon,name]) => `<button data-p="mode" data-mode="${key}" aria-pressed="${mode === key}"><span>${icon}</span>${name}</button>`).join('')}</nav>
+      <div class="workspace-collections-title"><strong>合集</strong><button data-p="collection-new" aria-label="新建合集">＋</button></div>
+      <div class="workspace-collections">${item('', '全部任务')}${item('none', '未分类')}${entries.map(c => item(c.id,c.name,c.color)).join('')}</div>
+      ${selectedCollection && selectedCollection !== 'none' ? '<button class="collection-manage" data-p="collection-edit">管理当前合集</button>' : ''}
+      ${collectionEditor ? `<form data-p-form="collection" class="collection-editor"><strong>${collectionEditor.id ? '编辑合集' : '新建合集'}</strong><label>合集名称<input name="name" required maxlength="80" value="${esc(collectionEditor.name)}"></label><label>合集颜色<input name="color" type="color" value="${esc(collectionEditor.color)}"></label><div><button type="submit">保存合集</button><button type="button" data-p="collection-cancel">取消</button></div>${collectionEditor.id ? `<button type="button" data-p="collection-delete">${deletingCollection ? '确认删除合集，保留全部任务' : '删除合集'}</button>` : ''}</form>` : ''}
+      <div class="workspace-sidebar-bottom"><button data-p="close">▧ 悬浮窗模式</button><button data-p="settings">⚙ 设置与同步</button></div></aside>`;
+  }
+
   function render(resetScroll = false) {
     if (!host) return;
     const scroll = host.querySelector('.time-grid-scroll');
     if (scroll && !resetScroll) timelineScroll = { top: scroll.scrollTop, left: scroll.scrollLeft };
     if (resetScroll) timelineScroll = null;
-    host.innerHTML = `<section class="planner-shell" role="dialog" aria-modal="true" aria-label="日历与回顾">
-      <header class="planner-header"><div><h2>日历与回顾</h2><p>安排未来，也看见每一天的进展</p></div><div class="planner-window-actions"><button type="button" data-p="maximize" aria-label="最大化或还原窗口" title="最大化 / 还原">□</button><button type="button" data-p="close" aria-label="关闭日历与回顾">返回待办 ×</button></div></header>
-      <nav class="planner-tabs" aria-label="视图"><button data-p="mode" data-mode="calendar" aria-pressed="${mode === 'calendar'}">日历</button><button data-p="mode" data-mode="history" aria-pressed="${mode === 'history'}">完成记录</button><button data-p="mode" data-mode="reminders" aria-pressed="${mode === 'reminders'}">提醒中心</button></nav>
+    if (selectedCollection && selectedCollection !== 'none' && !collections(store.doc).some(c => c.id === selectedCollection)) selectedCollection = '';
+    host.innerHTML = `${sidebar()}<section class="planner-shell" role="main" aria-label="任务主页面">
+      <header class="planner-header"><div><h2>${mode === 'calendar' ? (collections(store.doc).find(c => c.id === selectedCollection)?.name || (selectedCollection === 'none' ? '未分类' : '日历')) : mode === 'history' ? '完成记录' : '提醒中心'}</h2><p>安排未来，也看见每一天的进展</p></div><div class="planner-window-actions"><button type="button" data-p="maximize" aria-label="最大化或还原窗口" title="最大化 / 还原">□</button><button type="button" data-p="hide" aria-label="隐藏到托盘">×</button></div></header>
+
       <div class="planner-content ${mode === 'calendar' ? 'calendar-content' : ''}">${mode === 'calendar' ? calendar() : mode === 'history' ? history() : reminders()}</div>
       <p class="planner-status" role="status"></p>
       <footer class="planner-footer">${esc(store.doc.sync.timeZone)} · ${mode === 'calendar' && view !== 'month' ? '点击空白时间安排任务，拖动普通任务可调整日期和时间。' : '选择日期安排任务，完成记录按实际完成日期统计。'}</footer>
@@ -67,24 +86,24 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     return `<section class="planner-month-surface">
       <div class="planner-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<span>${d}</span>`).join('')}</div>
       <div class="planner-grid">${monthDates(month).map(d => {
-        const items = tasksOnDate(store.doc, d, current), done = items.filter(t => t.completed).length;
+        const items = selectedTasks(d, current), done = items.filter(t => t.completed).length;
         return `<button class="planner-day ${d.slice(0, 7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-pressed="${d === date}" aria-label="${d}，${done} 已完成，${items.length - done} 未完成"><span>${Number(d.slice(-2))}</span>${items.length ? `<small>${done} 完 / ${items.length - done} 待办</small><div class="month-previews">${items.slice(0, 2).map(t => `<div class="${t.completed ? 'done' : ''}">${t.time ? t.time + ' ' : ''}${esc(t.title)}</div>`).join('')}${items.length > 2 ? `<div>还有 ${items.length - 2} 项</div>` : ''}</div>` : '<small> </small>'}</button>`;
       }).join('')}</div></section>`;
   }
 
   function addForm() {
-    return `<form data-p-form="add" class="planner-add"><label>新待办<input name="title" required maxlength="500" placeholder="这一天想完成什么？" value="${esc(addDraft.title)}"></label><div class="planner-form-row"><label>时间<input name="time" type="time" aria-label="新任务时间" value="${esc(addDraft.time)}"></label><label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${esc(addDraft.duration || 30)}"></label></div><label>提醒<select name="lead">${leads(Number(addDraft.lead))}</select></label><label>项目<select name="project">${projects(addDraft.project || null)}</select></label><button type="submit">添加到 ${esc(date)}</button></form>`;
+    return `<form data-p-form="add" class="planner-add"><label>新待办<input name="title" required maxlength="500" placeholder="这一天想完成什么？" value="${esc(addDraft.title)}"></label><div class="planner-form-row"><label>时间<input name="time" type="time" aria-label="新任务时间" value="${esc(addDraft.time)}"></label><label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${esc(addDraft.duration || 30)}"></label></div><label>提醒<select name="lead">${leads(Number(addDraft.lead))}</select></label><label>合集<select name="project">${projects(addDraft.project || null)}</select></label><button type="submit">添加到 ${esc(date)}</button></form>`;
   }
 
   function inspector(current) {
-    const rows = tasksOnDate(store.doc, date, current);
+    const rows = selectedTasks(date, current);
     return `<section class="planner-agenda planner-inspector"><div class="inspector-heading"><h3>${esc(date)} <small>${rows.filter(t => t.completed).length} / ${rows.length} 完成</small></h3>${view !== 'month' ? '<button data-p="hide-inspector" aria-label="收起任务详情">×</button>' : ''}</div>
       ${editing ? editor(current.get(`task:${editing}`)?.payload) : addForm()}
       <div class="planner-tasks">${rows.length ? rows.map(t => row(t)).join('') : '<p class="planner-empty">这一天还没有任务，留一点空间给自己。</p>'}</div></section>`;
   }
 
   function miniCalendar(current) {
-    return `<div class="mini-month-nav"><button data-p="mini-month" data-step="-1" aria-label="小日历上个月">‹</button><strong>${month}</strong><button data-p="mini-month" data-step="1" aria-label="小日历下个月">›</button></div><div class="mini-month-grid">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<span>${d}</span>`).join('')}${monthDates(month).map(d => `<button class="mini-day ${d.slice(0, 7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-label="跳转到 ${d}" aria-pressed="${d === date}">${Number(d.slice(-2))}${tasksOnDate(store.doc, d, current).length ? '<i></i>' : ''}</button>`).join('')}</div>`;
+    return `<div class="mini-month-nav"><button data-p="mini-month" data-step="-1" aria-label="小日历上个月">‹</button><strong>${month}</strong><button data-p="mini-month" data-step="1" aria-label="小日历下个月">›</button></div><div class="mini-month-grid">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<span>${d}</span>`).join('')}${monthDates(month).map(d => `<button class="mini-day ${d.slice(0, 7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-label="跳转到 ${d}" aria-pressed="${d === date}">${Number(d.slice(-2))}${selectedTasks(d, current).length ? '<i></i>' : ''}</button>`).join('')}</div>`;
   }
 
   function currentMinutes() {
@@ -97,15 +116,15 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     const projectColor = task => current.get(`projects:${task.projectId}`)?.payload.color || '#4d83d4';
     return `<section class="timeline-panel" aria-label="${{ day: '日', three: '三日', week: '周' }[view]}时间轴"><div class="time-grid-scroll"><div class="time-grid" style="--days:${dates.length};--hour-height:${hourHeight}px;--grid-height:${height}px">
       <div class="time-grid-sticky"><div class="time-date-row"><div class="time-zone-label">GMT${new Intl.DateTimeFormat('en', { timeZone: store.doc.sync.timeZone, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName').value.replace('GMT', '')}</div>${dates.map(d => `<button class="time-date ${d === today() ? 'today' : ''}" data-p="select-day" data-date="${d}" aria-pressed="${d === date}"><span>${weekday(d)}</span><strong>${Number(d.slice(-2))}</strong></button>`).join('')}</div>
-      <div class="time-allday-row"><span class="time-allday-label">全天</span>${dates.map(d => `<div class="time-allday-cell" data-date="${d}">${tasksOnDate(store.doc, d, current).filter(t => !t.time).map(t => `<button class="allday-task ${t.completed ? 'done' : ''}" data-p="edit" data-id="${esc(t.id)}" data-date="${d}" title="${esc(t.title)}" style="--task-color:${projectColor(t)}">${t.completed ? '✓ ' : ''}${esc(t.title)}</button>`).join('')}<button class="allday-add" data-p="slot" data-date="${d}" data-time="" aria-label="${d} 添加全天任务">＋</button></div>`).join('')}</div></div>
-      <div class="time-hours-row"><div class="time-ruler" style="height:${height}px">${Array.from({ length: 24 }, (_, h) => `<span style="top:${h * hourHeight}px">${String(h).padStart(2, '0')}:00</span>`).join('')}</div>${dates.map(d => `<div class="time-day-canvas ${d === today() ? 'today' : ''}" data-date="${d}" style="height:${height}px" aria-label="${d} 时间轨">${timelineItems(store.doc, d, current).map(t => `<article class="time-block ${t.completed ? 'done' : ''} ${(t.end - t.start) * hourHeight / 60 < 36 ? 'short' : ''}" data-task-id="${esc(t.id)}" data-origin-date="${t.date}" draggable="${t.kind === 'one_off'}" style="top:${t.start * hourHeight / 60}px;height:${Math.max(12, (t.end - t.start) * hourHeight / 60)}px;left:calc(${t.lane * 100 / t.lanes}% + 3px);width:calc(${100 / t.lanes}% - 6px);--task-color:${projectColor(t)}"><button class="time-block-open" data-p="edit" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="编辑 ${esc(t.title)}" title="${esc(t.title)} · ${t.time} — ${formatMinutes((minutesOfDay(t.time) + (t.durationMinutes || 30)) % 1440)}"><strong>${esc(t.title)}</strong><small>${t.continuesBefore ? '承接前一天' : t.time} — ${formatMinutes(t.end % 1440)}${t.continuesAfter ? '（续）' : ''}</small></button><button class="time-block-check" data-p="toggle" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="${t.completed ? '重新打开' : '完成'} ${esc(t.title)}">${t.completed ? '✓' : '○'}</button></article>`).join('')}${d === today() ? `<div class="time-now" style="top:${currentMinutes() * hourHeight / 60}px" aria-label="当前时间 ${formatMinutes(currentMinutes())}"><i></i></div>` : ''}</div>`).join('')}</div>
+      <div class="time-allday-row"><span class="time-allday-label">全天</span>${dates.map(d => `<div class="time-allday-cell" data-date="${d}">${selectedTasks(d, current).filter(t => !t.time).map(t => `<button class="allday-task ${t.completed ? 'done' : ''}" data-p="edit" data-id="${esc(t.id)}" data-date="${d}" title="${esc(t.title)}" style="--task-color:${projectColor(t)}">${t.completed ? '✓ ' : ''}${esc(t.title)}</button>`).join('')}<button class="allday-add" data-p="slot" data-date="${d}" data-time="" aria-label="${d} 添加全天任务">＋</button></div>`).join('')}</div></div>
+      <div class="time-hours-row"><div class="time-ruler" style="height:${height}px">${Array.from({ length: 24 }, (_, h) => `<span style="top:${h * hourHeight}px">${String(h).padStart(2, '0')}:00</span>`).join('')}</div>${dates.map(d => `<div class="time-day-canvas ${d === today() ? 'today' : ''}" data-date="${d}" style="height:${height}px" aria-label="${d} 时间轨">${selectedTimeline(d, current).map(t => `<article class="time-block ${t.completed ? 'done' : ''} ${(t.end - t.start) * hourHeight / 60 < 36 ? 'short' : ''}" data-task-id="${esc(t.id)}" data-origin-date="${t.date}" draggable="${t.kind === 'one_off'}" style="top:${t.start * hourHeight / 60}px;height:${Math.max(12, (t.end - t.start) * hourHeight / 60)}px;left:calc(${t.lane * 100 / t.lanes}% + 3px);width:calc(${100 / t.lanes}% - 6px);--task-color:${projectColor(t)}"><button class="time-block-open" data-p="edit" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="编辑 ${esc(t.title)}" title="${esc(t.title)} · ${t.time} — ${formatMinutes((minutesOfDay(t.time) + (t.durationMinutes || 30)) % 1440)}"><strong>${esc(t.title)}</strong><small>${t.continuesBefore ? '承接前一天' : t.time} — ${formatMinutes(t.end % 1440)}${t.continuesAfter ? '（续）' : ''}</small></button><button class="time-block-check" data-p="toggle" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="${t.completed ? '重新打开' : '完成'} ${esc(t.title)}">${t.completed ? '✓' : '○'}</button></article>`).join('')}${d === today() ? `<div class="time-now" style="top:${currentMinutes() * hourHeight / 60}px" aria-label="当前时间 ${formatMinutes(currentMinutes())}"><i></i></div>` : ''}</div>`).join('')}</div>
       </div></div></section>`;
   }
 
   function history() {
-    const rows = completionHistory(store.doc, { from, to, query, project }), days = new Map();
+    const rows = completionHistory(store.doc, { from, to, query, project }).filter(t => matchesCollection(t, selectedCollection, store.doc)), days = new Map();
     for (const t of rows) days.set(t.date, (days.get(t.date) || 0) + 1);
-    return `<form data-p-form="filter" class="planner-filters"><label>起始日期<input name="from" type="date" value="${from}" required></label><label>结束日期<input name="to" type="date" value="${to}" required></label><label>搜索<input name="query" value="${esc(query)}" placeholder="标题或描述"></label><label>项目<select name="project">${projects(project || undefined)}</select></label><button type="submit">查询</button><button type="button" data-p="week">近 7 天</button></form>
+    return `<form data-p-form="filter" class="planner-filters"><label>起始日期<input name="from" type="date" value="${from}" required></label><label>结束日期<input name="to" type="date" value="${to}" required></label><label>搜索<input name="query" value="${esc(query)}" placeholder="标题或描述"></label><label>合集<select name="project">${projects(project || undefined)}</select></label><button type="submit">查询</button><button type="button" data-p="week">近 7 天</button></form>
       <div class="planner-summary"><strong>${rows.length}<span>次完成</span></strong><strong>${days.size}<span>个活跃日</span></strong><strong>${rows.filter(t => t.kind === 'daily').length}<span>次打卡</span></strong></div>
       <p class="planner-help">同一普通任务按当前完成状态计一次，重新打开后不计入；打卡按每天计一次。旧记录没有准确时间时按计划日期展示并标注。</p>
       ${editing ? editor(currentEntities(store.doc).get(`task:${editing}`)?.payload) : ''}
@@ -117,7 +136,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     if (editDraft?.id !== t.id) editDraft = { id: t.id, title: t.title, detail: t.detail, date: t.scheduledDate, time: t.time || '', duration: String(t.durationMinutes || 30), lead: String(t.remindLeadMinutes || 0), project: t.projectId || '' };
     const draft = editDraft;
     const events = taskEvents(store.doc, t.id);
-    return `<form data-p-form="edit" class="planner-editor"><h4>编辑任务${t.kind === 'daily' ? ' · 每天重复' : ''}</h4><label>标题<input name="title" value="${esc(draft.title)}" required maxlength="500"></label><label>描述<textarea name="detail">${esc(draft.detail)}</textarea></label><div class="planner-form-row">${t.kind !== 'daily' ? `<label>计划日期<input name="date" type="date" value="${draft.date}" required></label>` : ''}<label>时间<input name="time" type="time" value="${draft.time}"></label></div><label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${draft.duration}"></label><div class="planner-form-row"><label>提醒<select name="lead">${leads(Number(draft.lead))}</select></label><label>项目<select name="project">${projects(draft.project || null)}</select></label></div><div class="planner-form-row"><button type="submit">保存修改</button><button type="button" data-p="cancel-edit">取消</button></div>${events.length ? `<details><summary>状态变更记录</summary>${events.map(e => `<p>${esc(new Date(e.at).toLocaleString('zh-CN', { timeZone: store.doc.sync.timeZone }))} · ${e.label}</p>`).join('')}</details>` : ''}</form>`;
+    return `<form data-p-form="edit" class="planner-editor"><h4>编辑任务${t.kind === 'daily' ? ' · 每天重复' : ''}</h4><label>标题<input name="title" value="${esc(draft.title)}" required maxlength="500"></label><label>描述<textarea name="detail">${esc(draft.detail)}</textarea></label><div class="planner-form-row">${t.kind !== 'daily' ? `<label>计划日期<input name="date" type="date" value="${draft.date}" required></label>` : ''}<label>时间<input name="time" type="time" value="${draft.time}"></label></div><label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${draft.duration}"></label><div class="planner-form-row"><label>提醒<select name="lead">${leads(Number(draft.lead))}</select></label><label>合集<select name="project">${projects(draft.project || null)}</select></label></div><div class="planner-form-row"><button type="submit">保存修改</button><button type="button" data-p="cancel-edit">取消</button></div>${events.length ? `<details><summary>状态变更记录</summary>${events.map(e => `<p>${esc(new Date(e.at).toLocaleString('zh-CN', { timeZone: store.doc.sync.timeZone }))} · ${e.label}</p>`).join('')}</details>` : ''}</form>`;
   }
 
   function reminders() {
@@ -172,6 +191,8 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     host.remove(); host = null;
     document.documentElement.classList.remove('planner-open');
     document.getElementById('panel').inert = false;
+    onModeChange(false);
+    try { await nativeWindow?.setSkipTaskbar?.(true); } catch (error) { console.warn('Taskbar mode unavailable', error); }
     try {
       if (nativeWindow && restoreSize) {
         await nativeWindow.setMinSize(new windowApi.LogicalSize(220, 180));
@@ -189,7 +210,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   async function open(next = 'calendar') {
     if (host || opening) return;
     opening = true;
-    beforeOpen(); mode = next; date = today(); rangeAnchor = date; month = date.slice(0, 7); from = shiftDate(date, -6); to = date; editing = null; editDraft = null; inspectorOpen = false; timelineScroll = null;
+    await beforeOpen(); mode = next; date = today(); rangeAnchor = date; month = date.slice(0, 7); from = shiftDate(date, -6); to = date; editing = null; editDraft = null; inspectorOpen = false; timelineScroll = null;
     const prefs = store.doc.local.plannerPrefs || {};
     view = ['day', 'three', 'week', 'month'].includes(prefs.view) ? prefs.view : 'month';
     hourHeight = [48, 60, 72, 84, 96].includes(prefs.hourHeight) ? prefs.hourHeight : 72;
@@ -216,12 +237,21 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     host.addEventListener('input', captureDrafts);
     host.addEventListener('change', captureDrafts);
     document.documentElement.classList.add('planner-open'); document.getElementById('panel').inert = true;
+    onModeChange(true);
+    try { await nativeWindow?.setSkipTaskbar?.(false); } catch (error) { console.warn('Taskbar mode unavailable', error); }
     host.addEventListener('click', async event => {
       const b = event.target.closest('[data-p]'); if (!b || busy) return;
       captureDrafts();
       try {
         switch (b.dataset.p) {
           case 'close': await close(); break;
+          case 'hide': await nativeWindow?.hide(); break;
+          case 'settings': window.dispatchEvent(new Event('todo-workspace-settings')); break;
+          case 'collection': selectedCollection = b.dataset.id; project = ''; editing = null; editDraft = null; addDraft.project = selectedCollection === 'none' ? '' : selectedCollection; collectionEditor = null; render(); break;
+          case 'collection-new': collectionEditor = { name: '', color: '#6375e8' }; deletingCollection = false; render(); host.querySelector('.collection-editor input')?.focus(); break;
+          case 'collection-edit': collectionEditor = { ...collections(store.doc).find(c => c.id === selectedCollection) }; deletingCollection = false; render(); break;
+          case 'collection-cancel': collectionEditor = null; deletingCollection = false; render(); break;
+          case 'collection-delete': if (!deletingCollection) { deletingCollection = true; render(); } else { await mutate(() => removeCollection(store.doc, collectionEditor.id), () => { selectedCollection = 'none'; collectionEditor = null; deletingCollection = false; addDraft.project = ''; }); } break;
           case 'maximize': await toggleMaximize(); break;
           case 'mode': mode = b.dataset.mode; editing = null; editDraft = null; render(); break;
           case 'view': view = b.dataset.view; rangeAnchor = date; editing = null; editDraft = null; persistPrefs(); render(true); break;
@@ -269,15 +299,19 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
         if (data.from > data.to) { host.querySelector('.planner-status').textContent = '起始日期不能晚于结束日期'; return; }
         ({ from, to, query, project } = data); render(); return;
       }
+      if (form.dataset.pForm === 'collection') {
+        await mutate(() => { selectedCollection = saveCollection(store.doc, { ...data, id: collectionEditor.id }); }, () => { collectionEditor = null; addDraft.project = selectedCollection; });
+        return;
+      }
       const values = { title: data.title, time: data.time || null, durationMinutes: Number(data.duration), remindLeadMinutes: Number(data.lead), projectId: data.project || null };
-      if (form.dataset.pForm === 'add') await mutate(() => createTask(store.doc, { ...values, scheduledDate: date }), () => { addDraft = emptyDraft(); });
+      if (form.dataset.pForm === 'add') await mutate(() => createTask(store.doc, { ...values, scheduledDate: date }), () => { addDraft = { ...emptyDraft(), project: selectedCollection === 'none' ? '' : selectedCollection }; });
       else if (form.dataset.pForm === 'edit') await mutate(() => updateTask(store.doc, editing, { ...values, detail: data.detail, ...(data.date ? { scheduledDate: data.date } : {}) }), () => { editing = null; editDraft = null; });
     });
-    render(); host.querySelector('[data-p="close"]').focus();
+    render(); host.querySelector('[data-p="mode"]').focus();
   }
   document.addEventListener('keydown', event => {
-    if (!host) return;
-    if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); close(); }
+    if (!host || document.querySelector('.overlay')) return;
+    if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); if (collectionEditor) { collectionEditor = null; render(); } else if (editing || inspectorOpen) { editing = null; editDraft = null; inspectorOpen = false; render(); } }
     if (event.key === 'Tab') {
       const list = [...host.querySelectorAll('button, input, select, textarea, summary')].filter(e => !e.disabled && e.getClientRects().length);
       const first = list[0], last = list.at(-1);

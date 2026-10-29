@@ -39,6 +39,19 @@ try {
   if (!page) throw new Error('Tauri application page not found');
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  await page.waitForSelector('.workspace-sidebar');
+  assert.equal(await page.locator('.planner-grid').count(), 1);
+  await page.getByRole('button', { name: '新建合集', exact: true }).click();
+  await page.locator('.collection-editor [name="name"]').fill('原生验证合集');
+  await page.getByRole('button', { name: '保存合集', exact: true }).click();
+  await page.locator('.workspace-collection[aria-pressed="true"]').filter({ hasText: '原生验证合集' }).waitFor();
+  await page.screenshot({ path: join(output, 'workspace.png'), omitBackground: true });
+  await page.getByRole('button', { name: '管理当前合集' }).click();
+  await page.getByRole('button', { name: '删除合集', exact: true }).click();
+  await page.getByRole('button', { name: '确认删除合集，保留全部任务' }).click();
+  await page.locator('.workspace-collection[aria-pressed="true"]').filter({ hasText: '未分类' }).waitFor();
+  await page.locator('[data-p="collection"][data-id=""]').click();
+  await page.locator('[data-p="close"]').click();
   await page.waitForSelector('[data-act="collapse"]');
   await page.evaluate(async () => {
     const api = window.__TAURI__.window;
@@ -95,7 +108,7 @@ try {
   await page.locator('.planner-history strong').filter({ hasText: '验证原生日历' }).waitFor({ state: 'attached' });
   assert.equal(await page.locator('.planner-history strong').filter({ hasText: '验证原生日历' }).count(), 1);
   await page.screenshot({ path: join(output, 'history.png'), omitBackground: true });
-  await page.getByRole('button', { name: '关闭日历与回顾', exact: true }).click();
+  await page.getByRole('button', { name: '▧ 悬浮窗模式', exact: true }).click();
   await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, original);
   assert.deepEqual(errors, []);
   console.log('PASS: native maximize/restore, mini/capture, day/three-day/week timelines, completion history, and geometry restoration');

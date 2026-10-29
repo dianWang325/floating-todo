@@ -96,6 +96,7 @@ function defaultState() {
     itemsByDay: { today: [], tomorrow: [], dayAfterTomorrow: [] },
     recurringItems: [],
     settings: {
+      startupView: 'workspace',
       alwaysOnTop: true,
       showOnDesktop: false,
       opacity: 0.78,
@@ -137,7 +138,7 @@ let state = load();
 syncStore = new SyncStore({
   invoke: (name, args) => TAURI.core.invoke(name, args),
   native: !!window.__TAURI_INTERNALS__,
-  onChange: view => { state = view; render(); },
+  onChange: view => { state = view; render(); window.dispatchEvent(new Event('todo-store-change')); },
   onStatus: () => window.dispatchEvent(new Event('todo-sync-status')),
 });
 try {
@@ -353,6 +354,7 @@ function applyWindowMode() {
   if (!appWindow) return;
 
   const requestedMode =
+    document.documentElement.classList.contains('planner-open') ? 'normal' :
     isWindows && state.settings.showOnDesktop
       ? "desktop"
       : state.settings.alwaysOnTop
@@ -401,7 +403,7 @@ function applyWindowChrome() {
     root.style.removeProperty("--panel-bottom");
   }
   if (appWindow) {
-    appWindow.setIgnoreCursorEvents(!!state.settings.clickThrough).catch(() => {});
+    appWindow.setIgnoreCursorEvents(!document.documentElement.classList.contains('planner-open') && !!state.settings.clickThrough).catch(() => {});
   }
   applyWindowMode();
 }
@@ -479,7 +481,7 @@ function render() {
       <button class="icon-btn" data-act="settings" title="设置">${ICONS.gear}</button>
     </div>`;
 
-    html += `<div class="planner-launch"><button data-act="planner">日历与回顾 <span>↗</span></button><button data-act="reminder-center" title="查看提醒与稍后提醒">${ICONS.clock} 提醒</button></div>`;
+    html += `<div class="planner-launch"><button data-act="planner">打开主页面 <span>↗</span></button><button data-act="reminder-center" title="查看提醒与稍后提醒">${ICONS.clock} 提醒</button></div>`;
     html += `<div class="day-picker">`;
     DAYS.forEach((d, i) => {
       html += `<div class="day-seg ${state.selectedDay === d ? "sel" : ""}" data-act="day" data-day="${d}">
@@ -1049,7 +1051,7 @@ function openSettings() {
       <div class="set-row"><span>始终置顶</span><div class="switch ${s.alwaysOnTop ? "on" : ""}" data-s="alwaysOnTop"></div></div>
       ${isWindows ? `<div class="set-row"><span>固定在桌面（Win+D 后仍显示）</span><div class="switch ${s.showOnDesktop ? "on" : ""}" data-s="showOnDesktop"></div></div>` : ""}
       <div class="set-row"><span>鼠标穿透（点击落到下层）</span><div class="switch ${s.clickThrough ? "on" : ""}" data-s="clickThrough"></div></div>
-      <div class="set-row"><span>开机自启动</span><div class="switch" id="autostart-sw" data-s="autostart"></div></div>
+      <label class="set-row"><span>启动视图</span><select id="startup-view"><option value="workspace" ${state.settings.startupView !== 'widget' ? 'selected' : ''}>主页面（日历与合集）</option><option value="widget" ${state.settings.startupView === 'widget' ? 'selected' : ''}>悬浮窗</option></select></label><div class="set-row"><span>开机自启动</span><div class="switch" id="autostart-sw" data-s="autostart"></div></div>
       <div class="set-row"><span>开启备忘录</span><div class="switch ${s.memoEnabled ? "on" : ""}" data-s="memoEnabled"></div></div>
     </section>
     <section class="settings-group" aria-labelledby="settings-appearance-title">
@@ -1102,6 +1104,7 @@ function openSettings() {
   </div>`;
   document.body.appendChild(overlay);
 
+  overlay.querySelector('#startup-view')?.addEventListener('change', event => { state.settings.startupView = event.target.value; save(); });
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) { overlay.remove(); return; }
     const sw = e.target.closest("[data-s]");
@@ -1350,9 +1353,12 @@ TAURI?.event?.listen?.("toggle-desktop-mode", () => {
 
 const planner = createPlanner({
   store: syncStore, nativeWindow: appWindow, windowApi: TAURI?.window,
-  beforeOpen: () => { save(); closeMenu(); classificationUI.closeAutocomplete(); },
+  beforeOpen: async () => { await windowUI.setMode('panel'); save(); closeMenu(); classificationUI.closeAutocomplete(); },
+  onModeChange: () => { applyWindowChrome(); },
   notify: text => classificationUI.showNotice(text),
 });
+window.addEventListener('todo-store-change', () => planner.refresh());
+window.addEventListener('todo-workspace-settings', () => openSettings());
 window.addEventListener('todo-test-notification', async () => {
   try {
     if (!await ensureNotifyPermission()) throw new Error('请在系统设置中允许“悬浮待办”的通知');
@@ -1368,6 +1374,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 updateCompact();
 render();
 applyWindowChrome();
+if (state.settings.startupView !== 'widget') await planner.open();
 
 // 跨午夜定期滚动 + 到点提醒
 setInterval(() => render(), 5 * 60 * 1000);

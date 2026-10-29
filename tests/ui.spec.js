@@ -14,6 +14,14 @@ async function boot(page, seed) {
       notification: { isPermissionGranted: async () => true, sendNotification: n => window.__notifications.push(n) },
     };
   }, { key: KEY, seed });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('floating-todo/v3-preview') && !localStorage.getItem('floating-todo/snapshot')) localStorage.setItem('floating-todo/snapshot', JSON.stringify({ itemsByDay: {}, settings: { startupView: 'widget' } }));
+    for (const key of ['floating-todo/v3-preview', 'floating-todo/snapshot']) {
+      const raw = localStorage.getItem(key); if (!raw) continue;
+      const doc = JSON.parse(raw), local = key.endsWith('v3-preview') ? (doc.local ||= {}) : doc;
+      (local.settings ||= {}).startupView = 'widget'; localStorage.setItem(key, JSON.stringify(doc));
+    }
+  });
   await page.goto('/'); await expect(page.locator('#main-input')).toBeVisible();
 }
 async function add(page, value) { await page.locator('#main-input').fill(value); await page.locator('[data-act="submit"]').click(); }

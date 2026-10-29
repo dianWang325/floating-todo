@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { newDocument } from '../src/sync-model.js';
 async function boot(page) {
   await page.addInitScript(({ doc }) => {
+    (doc.local.settings ||= {}).startupView = 'widget';
     let saved = JSON.stringify(doc), enabled = false, peers = [];
     window.__lanCalls = [];
     window.__TAURI_INTERNALS__ = {};
@@ -19,6 +20,14 @@ async function boot(page) {
       if (name === 'lan_pull') return [];
     } }, event: { listen: async (name, callback) => { if (name === 'lan-changed') window.__lanWake = callback; return () => {}; } } };
   }, { doc: newDocument() });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('floating-todo/v3-preview') && !localStorage.getItem('floating-todo/snapshot')) localStorage.setItem('floating-todo/snapshot', JSON.stringify({ itemsByDay: {}, settings: { startupView: 'widget' } }));
+    for (const key of ['floating-todo/v3-preview', 'floating-todo/snapshot']) {
+      const raw = localStorage.getItem(key); if (!raw) continue;
+      const doc = JSON.parse(raw), local = key.endsWith('v3-preview') ? (doc.local ||= {}) : doc;
+      (local.settings ||= {}).startupView = 'widget'; localStorage.setItem(key, JSON.stringify(doc));
+    }
+  });
   await page.goto('/'); await expect(page.locator('#main-input')).toBeVisible();
   await page.locator('[data-act="settings"]').click(); await page.locator('[data-s="lan"]').click();
 }

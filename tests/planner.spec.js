@@ -10,6 +10,14 @@ async function boot(page) {
       sendNotification: async n => window.__notifications.push(n),
     } };
   });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('floating-todo/v3-preview') && !localStorage.getItem('floating-todo/snapshot')) localStorage.setItem('floating-todo/snapshot', JSON.stringify({ itemsByDay: {}, settings: { startupView: 'widget' } }));
+    for (const key of ['floating-todo/v3-preview', 'floating-todo/snapshot']) {
+      const raw = localStorage.getItem(key); if (!raw) continue;
+      const doc = JSON.parse(raw), local = key.endsWith('v3-preview') ? (doc.local ||= {}) : doc;
+      (local.settings ||= {}).startupView = 'widget'; localStorage.setItem(key, JSON.stringify(doc));
+    }
+  });
   await page.goto('/'); await expect(page.locator('#main-input')).toBeVisible();
 }
 
@@ -32,7 +40,7 @@ test('calendar creates far-future tasks, edits dates, completes, archives and se
   await page.getByRole('button', { name: '保存修改', exact: true }).click();
   await page.getByRole('button', { name: '今天', exact: true }).click();
   await page.getByRole('button', { name: '完成 下季度设计方案', exact: true }).click();
-  await page.getByRole('button', { name: '关闭日历与回顾', exact: true }).click();
+  await page.getByRole('button', { name: '▧ 悬浮窗模式', exact: true }).click();
   await page.locator('[data-act="clear"]').click();
   await expect(page.locator('.row')).toHaveCount(0);
   await page.locator('[data-act="planner"]').click(); await page.locator('[data-mode="history"]').click();
@@ -44,7 +52,7 @@ test('calendar creates far-future tasks, edits dates, completes, archives and se
   await page.locator('[data-p-form="filter"] [name="query"]').fill('方案'); await page.getByRole('button', { name: '查询', exact: true }).click();
   await page.getByRole('button', { name: '重新打开 下季度设计方案', exact: true }).click();
   await expect(page.locator('.planner-empty')).toContainText('暂无完成');
-  await page.keyboard.press('Escape'); await page.reload();
+  await page.locator('[data-p="close"]').click(); await page.reload();
   await expect(page.locator('.row .title')).toContainText('下季度设计方案');
   expect(plannedDate).not.toBe(today); expect(errors).toEqual([]);
 });
@@ -57,7 +65,7 @@ test('compact calendar remains scrollable, keyboard closes and reminder center s
   await page.getByRole('button', { name: '发送测试通知', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__notifications.length)).toBe(1);
   await page.locator('[data-p="reminders-enabled"]').uncheck();
-  await page.keyboard.press('Escape'); await expect(page.locator('#main-input')).toBeFocused();
+  await page.locator('[data-p="close"]').click(); await expect(page.locator('#main-input')).toBeFocused();
   await page.locator('[data-act="reminder-center"]').click();
   await expect(page.locator('[data-p="reminders-enabled"]')).not.toBeChecked();
 });
@@ -73,7 +81,7 @@ test('calendar visual layouts fit light, dark and small windows', async ({ page 
     await page.screenshot({ path: testInfo.outputPath(`calendar-${theme}.png`) });
     const overflow = await page.locator('.planner-content').evaluate(e => e.scrollWidth > e.clientWidth + 1);
     expect(overflow).toBe(false);
-    await page.keyboard.press('Escape');
+    await page.locator('[data-p="close"]').click();
   }
   await page.setViewportSize({ width: 340, height: 560 });
   await page.locator('[data-act="planner"]').click();

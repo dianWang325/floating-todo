@@ -37,6 +37,14 @@ async function boot(page, { native = false, doc = documentWithTasks() } = {}) {
     window.__TAURI__.window = { getCurrentWindow: () => win, LogicalSize, PhysicalSize, PhysicalPosition, currentMonitor: async () => ({ scaleFactor: 1, workArea: { position: { x: 0, y: 0 }, size: { width: 1600, height: 1000 } } }) };
     window.__TAURI__.event = { listen: async (name, cb) => { n.listeners[name] = cb; return () => {}; } };
   }, { native, doc });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('floating-todo/v3-preview') && !localStorage.getItem('floating-todo/snapshot')) localStorage.setItem('floating-todo/snapshot', JSON.stringify({ itemsByDay: {}, settings: { startupView: 'widget' } }));
+    for (const key of ['floating-todo/v3-preview', 'floating-todo/snapshot']) {
+      const raw = localStorage.getItem(key); if (!raw) continue;
+      const doc = JSON.parse(raw), local = key.endsWith('v3-preview') ? (doc.local ||= {}) : doc;
+      (local.settings ||= {}).startupView = 'widget'; localStorage.setItem(key, JSON.stringify(doc));
+    }
+  });
   await page.goto('/'); await expect(page.locator('#main-input')).toBeVisible();
 }
 const readDoc = page => page.evaluate(() => JSON.parse(localStorage.getItem('floating-todo/v3-preview')));
@@ -105,7 +113,7 @@ test('range and zoom preferences persist, new-task drafts survive view changes',
   await expect(page.locator('[data-p-form="add"] [name="time"]')).toHaveValue('15:45');
   await page.getByRole('button', { name: '放大时间轴', exact: true }).click();
   expect((await readDoc(page)).local.plannerPrefs).toMatchObject({ view: 'week', hourHeight: 84 });
-  await page.keyboard.press('Escape'); await page.reload(); await page.locator('[data-act="planner"]').click();
+  await page.locator('[data-p="close"]').click(); await page.reload(); await page.locator('[data-act="planner"]').click();
   await expect(page.locator('[data-view="week"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.time-day-canvas')).toHaveCount(7);
 });

@@ -3,6 +3,7 @@ import { newDocument, writeRevision, mergeRevisions, dateInZone } from '../src/s
 const task = (id, title) => ({ id, title, kind: 'one_off', detail: '详情', time: null, scheduledDate: dateInZone(), completed: false, createdAt: 1, projectId: null, tagIds: [] });
 async function boot(page, document = newDocument()) {
   await page.addInitScript(({ document }) => {
+    (document.local.settings ||= {}).startupView = 'widget';
     if (!localStorage.getItem('test-native-db')) localStorage.setItem('test-native-db', JSON.stringify(document));
     window.__TAURI_INTERNALS__ = {};
     const files = new Map(), dirs = new Set(['']); let password = '';
@@ -26,6 +27,14 @@ async function boot(page, document = newDocument()) {
       }
     } } };
   }, { document });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('floating-todo/v3-preview') && !localStorage.getItem('floating-todo/snapshot')) localStorage.setItem('floating-todo/snapshot', JSON.stringify({ itemsByDay: {}, settings: { startupView: 'widget' } }));
+    for (const key of ['floating-todo/v3-preview', 'floating-todo/snapshot']) {
+      const raw = localStorage.getItem(key); if (!raw) continue;
+      const doc = JSON.parse(raw), local = key.endsWith('v3-preview') ? (doc.local ||= {}) : doc;
+      (local.settings ||= {}).startupView = 'widget'; localStorage.setItem(key, JSON.stringify(doc));
+    }
+  });
   await page.goto('/'); await expect(page.locator('#main-input')).toBeVisible();
 }
 async function syncSettings(page) { await page.locator('[data-act="settings"]').click(); await page.locator('[data-s="sync"]').click(); }
