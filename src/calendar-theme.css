@@ -104,3 +104,9 @@ html[data-theme="dark"] .planner-overlay {
 .collection-custom-color input { width: 32px; height: 26px; border: 0; padding: 0; background: transparent; cursor: pointer; }
 @media (max-width: 1000px) { .planner-shell { padding: 14px; } .calendar-toolbar h3 { font-size: 22px; } }
 @media (max-width: 650px) { .workspace-mini-calendar { display: none; } .workspace-sidebar-bottom { padding-top: 0; border: 0; } .planner-shell { padding: 12px; } .calendar-toolbar h3 { font-size: 20px; } .planner-month-surface .planner-day { padding: 3px; } .month-previews .month-event { padding: 0 2px; font-size: 10px; } }
+
+/* Native Windows caption owns the three window controls in desktop mode. */
+.native-titlebar .planner-window-actions { display: none; }
+.planner-window-actions { gap: 0; }
+.planner-window-actions button { width: 40px; height: 28px; border-radius: 0; }
+.planner-window-actions [data-p="window-close"]:hover { color: white; background: #c42b1c; }

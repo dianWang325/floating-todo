@@ -8,9 +8,9 @@ const collectionColors = [['红色','#ff3b30'],['橙色','#ff9500'],['黄色','#
 const leads = value => [0, 5, 10, 15, 30, 60, 1440].map(n => `<option value="${n}" ${n === value ? 'selected' : ''}>${n ? `提前 ${n === 1440 ? '1 天' : n + ' 分钟'}` : '到点提醒'}</option>`).join('');
 
 // One authoritative store: expanding the existing window avoids competing SQLite writers.
-export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowApi, onModeChange = () => {} }) {
+export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowApi, onModeChange = () => {}, nativeFrame = false, beforeWindowClose = () => {} }) {
   let host, mode = 'calendar', date, month, from, to, query = '', project = '', busy = false, editing = null, restoreSize, restorePosition, restoreMaximized = false, previousFocus, opening = false;
-  let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null;
+  let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null, nativeTitlebar = false, closeUnlisten = null;
   const emptyDraft = () => ({ title: '', time: '', duration: '30', lead: '0', project: '' });
   let addDraft = emptyDraft(), editDraft = null, selectedCollection = '', collectionEditor = null, deletingCollection = false, contextMenu = null;
   const selectedTasks = (day, current) => tasksOnDate(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc));
@@ -91,13 +91,14 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     if (resetScroll) timelineScroll = null;
     if (selectedCollection && selectedCollection !== 'none' && !collections(store.doc).some(c => c.id === selectedCollection)) selectedCollection = '';
     host.innerHTML = `${sidebar()}<section class="planner-shell" role="main" aria-label="任务主页面">
-      <header class="planner-header"><div><h2>${mode === 'calendar' ? (collections(store.doc).find(c => c.id === selectedCollection)?.name || (selectedCollection === 'none' ? '未分类' : '日历')) : mode === 'history' ? '完成记录' : '提醒中心'}</h2><p>安排未来，也看见每一天的进展</p></div><div class="planner-window-actions"><button type="button" data-p="maximize" aria-label="最大化或还原窗口" title="最大化 / 还原">□</button><button type="button" data-p="hide" aria-label="隐藏到托盘">×</button></div></header>
+      <header class="planner-header"><div><h2>${mode === 'calendar' ? (collections(store.doc).find(c => c.id === selectedCollection)?.name || (selectedCollection === 'none' ? '未分类' : '日历')) : mode === 'history' ? '完成记录' : '提醒中心'}</h2><p>安排未来，也看见每一天的进展</p></div><div class="planner-window-actions" aria-label="窗口控制"><button type="button" data-p="minimize" aria-label="最小化" title="最小化">─</button><button type="button" data-p="maximize" aria-label="最大化或还原窗口" title="最大化 / 还原">□</button><button type="button" data-p="window-close" aria-label="关闭窗口" title="关闭窗口（后台继续提醒）">×</button></div></header>
 
       <div class="planner-content ${mode === 'calendar' ? 'calendar-content' : ''}">${mode === 'calendar' ? calendar() : mode === 'history' ? history() : reminders()}</div>
       <p class="planner-status" role="status"></p>
       <footer class="planner-footer">${esc(store.doc.sync.timeZone)} · ${mode === 'calendar' && view !== 'month' ? '点击空白时间安排任务，拖动普通任务可调整日期和时间。' : '选择日期安排任务，完成记录按实际完成日期统计。'}</footer>
     </section>${contextMenuHTML()}`;
     positionContextMenu();
+    host.classList.toggle('native-titlebar', nativeTitlebar);
     host.querySelectorAll('button').forEach(b => { if (busy) b.disabled = true; });
     const nextScroll = host.querySelector('.time-grid-scroll');
     if (nextScroll) {
@@ -188,6 +189,21 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     finally { busy = false; render(); }
   }
 
+  async function closeWindow() {
+    captureDrafts(); dismissContextMenu();
+    try {
+      beforeWindowClose();
+      if (host && nativeWindow && !await nativeWindow.isMaximized()) store.doc.local.plannerPrefs = { ...store.doc.local.plannerPrefs, width: innerWidth, height: innerHeight };
+      await store.persist();
+      await nativeWindow?.hide();
+    } catch (error) { notify(`关闭窗口前保存失败，窗口已保留：${error.message || error}`); }
+  }
+  async function useNativeTitlebar(enabled) {
+    if (!nativeFrame || !nativeWindow?.setDecorations) return;
+    try { await nativeWindow.setDecorations(enabled); nativeTitlebar = enabled; }
+    catch (error) { nativeTitlebar = false; notify(`系统标题栏设置失败：${error}`); }
+  }
+
   async function toggleMaximize() {
     if (!nativeWindow || maximizeBusy) return;
     maximizeBusy = true;
@@ -225,6 +241,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     host.remove(); host = null;
     document.documentElement.classList.remove('planner-open');
     document.getElementById('panel').inert = false;
+    await useNativeTitlebar(false);
     onModeChange(false);
     try { await nativeWindow?.setSkipTaskbar?.(true); } catch (error) { console.warn('Taskbar mode unavailable', error); }
     try {
@@ -253,6 +270,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       try {
         restoreMaximized = await nativeWindow.isMaximized();
         restoreSize = await nativeWindow.innerSize(); restorePosition = await nativeWindow.outerPosition();
+        await useNativeTitlebar(true);
         await nativeWindow.setMaxSize(null);
         const monitor = await windowApi.currentMonitor();
         const scale = monitor?.scaleFactor || 1, area = monitor?.workArea || monitor;
@@ -263,6 +281,10 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
           if (area) await nativeWindow.setPosition(new windowApi.PhysicalPosition(area.position.x + Math.round((area.size.width - width * scale) / 2), area.position.y + Math.round((area.size.height - height * scale) / 2)));
         }
       } catch (error) { notify(`日历以当前窗口尺寸显示：${error}`); }
+    }
+    if (nativeWindow?.onCloseRequested && !closeUnlisten) {
+      try { closeUnlisten = await nativeWindow.onCloseRequested(event => { event.preventDefault(); return closeWindow(); }); }
+      catch (error) { await useNativeTitlebar(false); notify(`系统关闭事件不可用，已保留页面内窗口按钮：${error}`); }
     }
     host = document.createElement('div'); host.className = 'planner-overlay'; document.body.append(host);
     opening = false;
@@ -288,7 +310,8 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
         switch (b.dataset.p) {
           case 'collection-color': await changeCollectionColor(b.dataset.color); break;
           case 'close': await close(); break;
-          case 'hide': await nativeWindow?.hide(); break;
+          case 'minimize': await nativeWindow?.minimize(); break;
+          case 'window-close': await closeWindow(); break;
           case 'settings': window.dispatchEvent(new Event('todo-workspace-settings')); break;
           case 'collection': selectedCollection = b.dataset.id; project = ''; editing = null; editDraft = null; addDraft.project = selectedCollection === 'none' ? '' : selectedCollection; collectionEditor = null; render(); break;
           case 'collection-new': collectionEditor = { name: '', color: '#6375e8' }; deletingCollection = false; render(); host.querySelector('.collection-editor input')?.focus(); break;

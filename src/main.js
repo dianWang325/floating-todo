@@ -1352,8 +1352,13 @@ TAURI?.event?.listen?.("toggle-desktop-mode", () => {
 });
 
 const planner = createPlanner({
-  store: syncStore, nativeWindow: appWindow, windowApi: TAURI?.window,
-  beforeOpen: async () => { await windowUI.setMode('panel'); save(); closeMenu(); classificationUI.closeAutocomplete(); },
+  store: syncStore, nativeWindow: appWindow, windowApi: TAURI?.window, nativeFrame: isWindows,
+  beforeWindowClose: () => save(),
+  beforeOpen: async () => {
+    await windowUI.setMode('panel'); save(); closeMenu(); classificationUI.closeAutocomplete();
+    // Leave desktop parenting before enabling the ordinary Windows frame.
+    document.documentElement.classList.add('planner-open'); applyWindowChrome(); await windowModeTask;
+  },
   onModeChange: () => { applyWindowChrome(); },
   notify: text => classificationUI.showNotice(text),
 });

@@ -14,7 +14,11 @@ mod windows_desktop;
 /// 显示或隐藏悬浮窗。
 fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        if window.is_visible().unwrap_or(false) {
+        if window.is_minimized().unwrap_or(false) {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        } else if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
             let _ = window.show();
@@ -147,6 +151,7 @@ pub fn run() {
                     move |_app, _shortcut, event| {
                         if event.state == ShortcutState::Pressed {
                             if let Some(win) = handle.get_webview_window("main") {
+                                let _ = win.unminimize();
                                 let _ = win.show();
                                 let _ = win.set_focus();
                                 let _ = win.emit("quick-capture", ());

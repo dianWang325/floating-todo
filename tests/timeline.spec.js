@@ -147,6 +147,40 @@ test('maximization works in widget and planner; closing restores original geomet
   await page.locator('.mini-count').click(); await expect.poll(() => page.evaluate(() => __geometry.max)).toBe(true);
 });
 
+test('Windows workspace uses a native titlebar, saves before tray close, and restores borderless floating mode', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }));
+  await boot(page, { native: true });
+  await page.evaluate(() => {
+    const win = window.__TAURI__.window.getCurrentWindow(), n = window.__geometry;
+    n.visible = true;
+    win.setDecorations = async enabled => { n.decorated = enabled; };
+    win.onCloseRequested = async callback => { n.closeRequest = callback; return () => {}; };
+    win.hide = async () => { n.visible = false; };
+  });
+  await page.locator('[data-act="planner"]').click();
+  await expect.poll(() => page.evaluate(() => __geometry.decorated)).toBe(true);
+  await expect(page.locator('.planner-window-actions')).toBeHidden();
+  await page.locator('.planner-add [name="title"]').fill('关闭窗口时保留草稿');
+  await page.evaluate(() => window.__geometry.closeRequest({ preventDefault: () => { window.__geometry.prevented = true; } }));
+  expect(await page.evaluate(() => __geometry.prevented)).toBe(true);
+  expect(await page.evaluate(() => __geometry.visible)).toBe(false);
+  await expect(page.locator('.planner-add [name="title"]')).toHaveValue('关闭窗口时保留草稿');
+  const saved = await readDoc(page);
+  expect(saved.local.plannerPrefs.width).toBe(1360);
+  await page.evaluate(async () => {
+    window.__geometry.visible = true;
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => { throw new Error('test disk full'); };
+    try { await window.__geometry.closeRequest({ preventDefault() {} }); }
+    finally { Storage.prototype.setItem = original; }
+  });
+  expect(await page.evaluate(() => __geometry.visible)).toBe(true);
+  await expect(page.locator('.classification-notice')).toContainText('关闭窗口前保存失败');
+  await page.locator('[data-p="close"]').click();
+  await expect.poll(() => page.evaluate(() => __geometry.decorated)).toBe(false);
+  await expect(page.locator('#main-input')).toBeVisible();
+});
+
 test('timeline visual layouts in light/dark and narrow windows remain scrollable', async ({ page }, testInfo) => {
   await boot(page); await page.locator('[data-act="planner"]').click();
   for (const view of ['day', 'three', 'week', 'month']) {
