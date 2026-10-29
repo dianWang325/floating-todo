@@ -4,6 +4,7 @@ import { collections, saveCollection, removeCollection, matchesCollection, colle
 import { snoozeReminder } from './reminders.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const collectionColors = [['红色','#ff3b30'],['橙色','#ff9500'],['黄色','#b58a00'],['绿色','#28a745'],['蓝色','#007aff'],['紫色','#af52de'],['灰色','#8e8e93']];
 const leads = value => [0, 5, 10, 15, 30, 60, 1440].map(n => `<option value="${n}" ${n === value ? 'selected' : ''}>${n ? `提前 ${n === 1440 ? '1 天' : n + ' 分钟'}` : '到点提醒'}</option>`).join('');
 
 // One authoritative store: expanding the existing window avoids competing SQLite writers.
@@ -11,9 +12,10 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   let host, mode = 'calendar', date, month, from, to, query = '', project = '', busy = false, editing = null, restoreSize, restorePosition, restoreMaximized = false, previousFocus, opening = false;
   let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null;
   const emptyDraft = () => ({ title: '', time: '', duration: '30', lead: '0', project: '' });
-  let addDraft = emptyDraft(), editDraft = null, selectedCollection = '', collectionEditor = null, deletingCollection = false;
+  let addDraft = emptyDraft(), editDraft = null, selectedCollection = '', collectionEditor = null, deletingCollection = false, contextMenu = null;
   const selectedTasks = (day, current) => tasksOnDate(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc));
   const selectedTimeline = (day, current) => layoutTimedTasks(timelineItems(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc)));
+  const taskColor = task => collections(store.doc).find(c => c.id === collectionId(store.doc, task.projectId))?.color || '#8e8e93';
   const today = () => dateInZone(store.doc.sync.timeZone);
   const projects = value => `<option value="">${value === undefined ? '全部合集' : '未分类'}</option>` + collections(store.doc).map(c => `<option value="${esc(c.id)}" ${c.id === collectionId(store.doc, value) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
   const stamp = t => t.completedAt ? new Intl.DateTimeFormat('zh-CN', { timeZone: store.doc.sync.timeZone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(t.completedAt)) : '旧记录：完成时间未知';
@@ -41,14 +43,45 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   function sidebar() {
     const entries = collections(store.doc), current = currentEntities(store.doc);
     const count = id => [...current.values()].filter(r => r.entityType === 'task' && !r.deleted && !r.payload.completed && matchesCollection(r.payload, id, store.doc)).length;
-    const item = (id, name, color) => `<button class="workspace-collection" data-p="collection" data-id="${esc(id)}" aria-pressed="${selectedCollection === id}" title="${esc(name)}">${color ? `<i style="background:${color}"></i>` : '<span>▤</span>'}<span>${esc(name)}</span><small>${count(id)}</small></button>`;
+    const item = (id, name, color) => `<button class="workspace-collection" data-p="collection" data-id="${esc(id)}" aria-pressed="${selectedCollection === id}" title="${esc(name)}" ${color ? 'aria-haspopup="menu"' : ''}>${color ? `<i style="background:${color}"></i>` : '<span>▤</span>'}<span>${esc(name)}</span><small>${count(id)}</small></button>`;
     return `<aside class="workspace-sidebar" aria-label="合集侧边栏"><div class="workspace-brand"><span>✓</span><strong>悬浮待办</strong></div>
       <nav class="workspace-nav" aria-label="主导航">${[['calendar','▦','日历'],['history','◷','完成记录'],['reminders','♧','提醒中心']].map(([key,icon,name]) => `<button data-p="mode" data-mode="${key}" aria-pressed="${mode === key}"><span>${icon}</span>${name}</button>`).join('')}</nav>
       <div class="workspace-collections-title"><strong>合集</strong><button data-p="collection-new" aria-label="新建合集">＋</button></div>
       <div class="workspace-collections">${item('', '全部任务')}${item('none', '未分类')}${entries.map(c => item(c.id,c.name,c.color)).join('')}</div>
       ${selectedCollection && selectedCollection !== 'none' ? '<button class="collection-manage" data-p="collection-edit">管理当前合集</button>' : ''}
       ${collectionEditor ? `<form data-p-form="collection" class="collection-editor"><strong>${collectionEditor.id ? '编辑合集' : '新建合集'}</strong><label>合集名称<input name="name" required maxlength="80" value="${esc(collectionEditor.name)}"></label><label>合集颜色<input name="color" type="color" value="${esc(collectionEditor.color)}"></label><div><button type="submit">保存合集</button><button type="button" data-p="collection-cancel">取消</button></div>${collectionEditor.id ? `<button type="button" data-p="collection-delete">${deletingCollection ? '确认删除合集，保留全部任务' : '删除合集'}</button>` : ''}</form>` : ''}
-      <div class="workspace-sidebar-bottom"><button data-p="close">▧ 悬浮窗模式</button><button data-p="settings">⚙ 设置与同步</button></div></aside>`;
+      <div class="workspace-mini-calendar">${miniCalendar(current)}</div><div class="workspace-sidebar-bottom"><button data-p="close">▧ 悬浮窗模式</button><button data-p="settings">⚙ 设置与同步</button></div></aside>`;
+  }
+
+  function contextMenuHTML() {
+    if (!contextMenu) return '';
+    const entry = collections(store.doc).find(c => c.id === contextMenu.id);
+    if (!entry) { contextMenu = null; return ''; }
+    return `<div class="collection-context" role="menu" aria-label="${esc(entry.name)}的颜色"><div class="collection-context-title">合集颜色 · ${esc(entry.name)}</div><div class="collection-color-options">${collectionColors.map(([name,color]) => `<button role="menuitemradio" aria-checked="${entry.color.toLowerCase() === color}" aria-label="${name}" data-p="collection-color" data-color="${color}"><i style="background:${color}">${entry.color.toLowerCase() === color ? '✓' : ''}</i><span>${name}</span></button>`).join('')}</div><label class="collection-custom-color">自定义颜色<input type="color" aria-label="自定义合集颜色" value="${entry.color}"></label></div>`;
+  }
+  function positionContextMenu() {
+    const menu = host?.querySelector('.collection-context'); if (!menu || !contextMenu) return;
+    menu.style.left = `${Math.max(12, Math.min(contextMenu.x, innerWidth - menu.offsetWidth - 12))}px`;
+    menu.style.top = `${Math.max(12, Math.min(contextMenu.y, innerHeight - menu.offsetHeight - 12))}px`;
+  }
+  function dismissContextMenu(focus = false) {
+    const id = contextMenu?.id; contextMenu = null; host?.querySelector('.collection-context')?.remove();
+    if (focus && id) [...host.querySelectorAll('.workspace-collection')].find(b => b.dataset.id === id)?.focus();
+  }
+  function openContextMenu(button, x, y) {
+    if (busy || !collections(store.doc).some(c => c.id === button.dataset.id)) return;
+    captureDrafts(); contextMenu = { id: button.dataset.id, x, y };
+    render(); host.querySelector('.collection-context button')?.focus();
+  }
+  async function changeCollectionColor(color) {
+    const id = contextMenu?.id;
+    const entry = collections(store.doc).find(c => c.id === id);
+    if (!entry) { dismissContextMenu(); return; }
+    captureDrafts(); dismissContextMenu();
+    await mutate(() => saveCollection(store.doc, { ...entry, color }), () => {
+      if (collectionEditor?.id === id) collectionEditor.color = color;
+    });
+    [...host.querySelectorAll('.workspace-collection')].find(b => b.dataset.id === id)?.focus();
   }
 
   function render(resetScroll = false) {
@@ -63,7 +96,8 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       <div class="planner-content ${mode === 'calendar' ? 'calendar-content' : ''}">${mode === 'calendar' ? calendar() : mode === 'history' ? history() : reminders()}</div>
       <p class="planner-status" role="status"></p>
       <footer class="planner-footer">${esc(store.doc.sync.timeZone)} · ${mode === 'calendar' && view !== 'month' ? '点击空白时间安排任务，拖动普通任务可调整日期和时间。' : '选择日期安排任务，完成记录按实际完成日期统计。'}</footer>
-    </section>`;
+    </section>${contextMenuHTML()}`;
+    positionContextMenu();
     host.querySelectorAll('button').forEach(b => { if (busy) b.disabled = true; });
     const nextScroll = host.querySelector('.time-grid-scroll');
     if (nextScroll) {
@@ -74,11 +108,11 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
 
   function calendar() {
     const current = currentEntities(store.doc), dates = calendarRange(rangeAnchor, view);
-    const period = view === 'month' ? month : dates.length === 1 ? date : `${dates[0]} — ${dates.at(-1)}`;
+    const period = view === 'month' ? `${month.slice(0, 4)}年${Number(month.slice(5))}月` : dates.length === 1 ? date : `${dates[0]} — ${dates.at(-1)}`;
     const unit = { month: '个月', week: '周', three: '三日', day: '日' }[view];
     return `<div class="calendar-toolbar"><div class="planner-month-nav"><button data-p="navigate" data-step="-1" aria-label="上${unit}">‹</button><button data-p="today">今天</button><button data-p="navigate" data-step="1" aria-label="下${unit}">›</button><h3>${period}</h3></div><div class="calendar-toolbar-right"><div class="calendar-views" role="group" aria-label="日历范围">${[['day', '日'], ['three', '三日'], ['week', '周'], ['month', '月']].map(([key, label]) => `<button data-p="view" data-view="${key}" aria-pressed="${view === key}">${label}</button>`).join('')}</div>${view !== 'month' ? `<button data-p="zoom" data-step="-12" aria-label="缩小时间轴">−</button><button data-p="zoom" data-step="12" aria-label="放大时间轴">＋</button>` : ''}<button class="calendar-new" data-p="new">＋ 新建任务</button></div></div>
       <div class="calendar-body ${view === 'month' ? 'is-month' : 'is-timeline'} ${inspectorOpen || view === 'month' ? 'has-inspector' : ''}">
-      ${view === 'month' ? monthCalendar(current) : `<aside class="calendar-sidebar">${miniCalendar(current)}<div class="calendar-sidebar-note"><strong>让时间有条不紊</strong><p>没有具体时间的任务在全天区；有时间的任务按时段排布。</p></div></aside>${timeCalendar(current, dates)}`}
+      ${view === 'month' ? monthCalendar(current) : timeCalendar(current, dates)}
       ${view === 'month' || inspectorOpen ? inspector(current) : ''}</div>`;
   }
 
@@ -87,7 +121,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       <div class="planner-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<span>${d}</span>`).join('')}</div>
       <div class="planner-grid">${monthDates(month).map(d => {
         const items = selectedTasks(d, current), done = items.filter(t => t.completed).length;
-        return `<button class="planner-day ${d.slice(0, 7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-pressed="${d === date}" aria-label="${d}，${done} 已完成，${items.length - done} 未完成"><span>${Number(d.slice(-2))}</span>${items.length ? `<small>${done} 完 / ${items.length - done} 待办</small><div class="month-previews">${items.slice(0, 2).map(t => `<div class="${t.completed ? 'done' : ''}">${t.time ? t.time + ' ' : ''}${esc(t.title)}</div>`).join('')}${items.length > 2 ? `<div>还有 ${items.length - 2} 项</div>` : ''}</div>` : '<small> </small>'}</button>`;
+        return `<button class="planner-day ${d.slice(0, 7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-pressed="${d === date}" aria-label="${d}，${done} 已完成，${items.length - done} 未完成"><span>${Number(d.slice(-2))}</span>${items.length ? `<small>${done} 完 / ${items.length - done} 待办</small><div class="month-previews">${items.slice(0, 3).map(t => `<div class="month-event ${t.completed ? 'done' : ''}" style="--task-color:${taskColor(t)}">${t.time ? t.time + ' ' : ''}${esc(t.title)}</div>`).join('')}${items.length > 3 ? `<div class="month-more">还有 ${items.length - 3} 项</div>` : ''}</div>` : '<small> </small>'}</button>`;
       }).join('')}</div></section>`;
   }
 
@@ -113,7 +147,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
 
   function timeCalendar(current, dates) {
     const height = 24 * hourHeight;
-    const projectColor = task => current.get(`projects:${collectionId(store.doc, task.projectId)}`)?.payload.color || '#4d83d4';
+    const projectColor = taskColor;
     return `<section class="timeline-panel" aria-label="${{ day: '日', three: '三日', week: '周' }[view]}时间轴"><div class="time-grid-scroll"><div class="time-grid" style="--days:${dates.length};--hour-height:${hourHeight}px;--grid-height:${height}px">
       <div class="time-grid-sticky"><div class="time-date-row"><div class="time-zone-label">GMT${new Intl.DateTimeFormat('en', { timeZone: store.doc.sync.timeZone, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName').value.replace('GMT', '')}</div>${dates.map(d => `<button class="time-date ${d === today() ? 'today' : ''}" data-p="select-day" data-date="${d}" aria-pressed="${d === date}"><span>${weekday(d)}</span><strong>${Number(d.slice(-2))}</strong></button>`).join('')}</div>
       <div class="time-allday-row"><span class="time-allday-label">全天</span>${dates.map(d => `<div class="time-allday-cell" data-date="${d}">${selectedTasks(d, current).filter(t => !t.time).map(t => `<button class="allday-task ${t.completed ? 'done' : ''}" data-p="edit" data-id="${esc(t.id)}" data-date="${d}" title="${esc(t.title)}" style="--task-color:${projectColor(t)}">${t.completed ? '✓ ' : ''}${esc(t.title)}</button>`).join('')}<button class="allday-add" data-p="slot" data-date="${d}" data-time="" aria-label="${d} 添加全天任务">＋</button></div>`).join('')}</div></div>
@@ -181,7 +215,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
 
   async function close() {
     if (busy || !host) return;
-    captureDrafts();
+    captureDrafts(); contextMenu = null;
     try {
       if (nativeWindow && !await nativeWindow.isMaximized()) {
         store.doc.local.plannerPrefs = { ...store.doc.local.plannerPrefs, width: innerWidth, height: innerHeight };
@@ -234,6 +268,14 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     opening = false;
     host.addEventListener('mousedown', event => { if (event.button === 0 && event.target.closest('.planner-header') && !event.target.closest('button')) nativeWindow?.startDragging().catch(error => notify(String(error))); });
     host.addEventListener('dblclick', event => { if (event.target.closest('.planner-header') && !event.target.closest('button')) toggleMaximize(); });
+    host.addEventListener('contextmenu', event => {
+      const button = event.target.closest('.workspace-collection');
+      if (!button || !button.dataset.id || button.dataset.id === 'none') return;
+      event.preventDefault(); openContextMenu(button, event.clientX, event.clientY);
+    });
+    host.addEventListener('change', event => {
+      if (event.target.matches('.collection-custom-color input') && !busy) changeCollectionColor(event.target.value);
+    });
     host.addEventListener('input', captureDrafts);
     host.addEventListener('change', captureDrafts);
     document.documentElement.classList.add('planner-open'); document.getElementById('panel').inert = true;
@@ -244,6 +286,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       captureDrafts();
       try {
         switch (b.dataset.p) {
+          case 'collection-color': await changeCollectionColor(b.dataset.color); break;
           case 'close': await close(); break;
           case 'hide': await nativeWindow?.hide(); break;
           case 'settings': window.dispatchEvent(new Event('todo-workspace-settings')); break;
@@ -311,6 +354,19 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   }
   document.addEventListener('keydown', event => {
     if (!host || document.querySelector('.overlay')) return;
+    const collectionButton = event.target.closest?.('.workspace-collection[aria-haspopup="menu"]');
+    if (collectionButton && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+      event.preventDefault(); event.stopImmediatePropagation(); const rect = collectionButton.getBoundingClientRect(); openContextMenu(collectionButton, rect.left + 20, rect.bottom); return;
+    }
+    if (contextMenu) {
+      if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopImmediatePropagation(); dismissContextMenu(true); return; }
+      if (['ArrowDown','ArrowUp','ArrowRight','ArrowLeft','Home','End'].includes(event.key)) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        const buttons = [...host.querySelectorAll('.collection-context button, .collection-context input')];
+        const index = buttons.indexOf(document.activeElement), step = ['ArrowDown','ArrowRight'].includes(event.key) ? 1 : -1;
+        buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + step + buttons.length) % buttons.length]?.focus(); return;
+      }
+    }
     if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); if (collectionEditor) { collectionEditor = null; render(); } else if (editing || inspectorOpen) { editing = null; editDraft = null; inspectorOpen = false; render(); } }
     if (event.key === 'Tab') {
       const list = [...host.querySelectorAll('button, input, select, textarea, summary')].filter(e => !e.disabled && e.getClientRects().length);
@@ -319,6 +375,11 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
   }, true);
+  document.addEventListener('pointerdown', event => {
+    if (contextMenu && !event.target.closest('.collection-context')) dismissContextMenu();
+  }, true);
+  window.addEventListener('resize', () => dismissContextMenu());
+  window.addEventListener('blur', () => { if (!document.activeElement?.matches('.collection-custom-color input')) dismissContextMenu(); });
   const nowTimer = setInterval(() => {
     if (!host) return;
     for (const canvas of host.querySelectorAll('.time-day-canvas')) {

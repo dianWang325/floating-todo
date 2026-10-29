@@ -45,6 +45,9 @@ try {
   await page.locator('.collection-editor [name="name"]').fill('原生验证合集');
   await page.getByRole('button', { name: '保存合集', exact: true }).click();
   await page.locator('.workspace-collection[aria-pressed="true"]').filter({ hasText: '原生验证合集' }).waitFor();
+  await page.locator('.workspace-collection[aria-pressed="true"]').click({ button: 'right' });
+  await page.getByRole('menuitemradio', { name: '蓝色', exact: true }).click();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.workspace-collection[aria-pressed="true"] i')).backgroundColor === 'rgb(0, 122, 255)');
   await page.screenshot({ path: join(output, 'workspace.png'), omitBackground: true });
   await page.getByRole('button', { name: '管理当前合集' }).click();
   await page.getByRole('button', { name: '删除合集', exact: true }).click();
