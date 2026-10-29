@@ -43,13 +43,13 @@ try {
   assert.equal(await page.locator('.planner-grid').count(), 1);
   assert.equal(await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().isDecorated()), true);
   await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().minimize());
-  await page.waitForFunction(async () => await window.__TAURI__.window.getCurrentWindow().isMinimized());
+  await page.waitForFunction(async () => await window.__TAURI__.window.getCurrentWindow().isMinimized(), null, { polling: 100 });
   await page.evaluate(async () => { const win = window.__TAURI__.window.getCurrentWindow(); await win.unminimize(); await win.setFocus(); });
-  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isMinimized());
+  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isMinimized(), null, { polling: 100 });
   await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close());
-  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isVisible());
+  await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isVisible(), null, { polling: 100 });
   await page.evaluate(async () => { const win = window.__TAURI__.window.getCurrentWindow(); await win.show(); await win.setFocus(); });
-  await page.waitForFunction(async () => await window.__TAURI__.window.getCurrentWindow().isVisible());
+  await page.waitForFunction(async () => await window.__TAURI__.window.getCurrentWindow().isVisible(), null, { polling: 100 });
   await page.getByRole('button', { name: '新建合集', exact: true }).click();
   await page.locator('.collection-editor [name="name"]').fill('原生验证合集');
   await page.getByRole('button', { name: '保存合集', exact: true }).click();
