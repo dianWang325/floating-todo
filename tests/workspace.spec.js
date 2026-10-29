@@ -107,6 +107,8 @@ test('collection color menu supports keyboard, Escape, outside click and viewpor
   await entry.click({button:'right'});await page.locator('.planner-header').click();
   await expect(page.getByRole('menu')).toHaveCount(0);
   await page.setViewportSize({width:340,height:620});
+  // Resize events are delivered at the rendering step, after the protocol resize reply.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await entry.dispatchEvent('contextmenu',{clientX:337,clientY:615});
   const box=await page.getByRole('menu').boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);expect(box.y).toBeGreaterThanOrEqual(0);
