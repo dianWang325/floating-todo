@@ -106,6 +106,9 @@ html[data-theme="dark"] .planner-overlay {
 @media (max-width: 650px) { .workspace-mini-calendar { display: none; } .workspace-sidebar-bottom { padding-top: 0; border: 0; } .planner-shell { padding: 12px; } .calendar-toolbar h3 { font-size: 20px; } .planner-month-surface .planner-day { padding: 3px; } .month-previews .month-event { padding: 0 2px; font-size: 10px; } }
 
 /* Native Windows caption owns the three window controls in desktop mode. */
+.planner-overlay.native-titlebar { inset: 0; border-radius: 0; box-shadow: none; }
+body:has(> .planner-overlay.native-titlebar) > .overlay { inset: 0; border-radius: 0; }
+body:has(> .planner-overlay.native-titlebar) > .resize { display: none; }
 .native-titlebar .planner-window-actions { display: none; }
 .planner-window-actions { gap: 0; }
 .planner-window-actions button { width: 40px; height: 28px; border-radius: 0; }
