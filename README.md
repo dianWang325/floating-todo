@@ -25,7 +25,7 @@
 
 <img src="docs/images/banner.svg" alt="悬浮待办 · Floating Todo" width="100%" />
 
-# 悬浮待办 · floating todo
+# 待办清单
 
 [简体中文](README.md) | [English](README.en.md)
 
@@ -155,7 +155,7 @@
 | 🍎 macOS (Intel) | `floating-todo_x.x.x_x64.dmg` | Intel 芯片 |
 | 🪟 Windows | `floating-todo_x.x.x_x64-setup.exe` | Win10/11 64 位 |
 
-应用包及安装器使用英文名称 **floating todo**；GitHub 下载附件统一使用 `floating-todo_` 前缀。macOS 安装后为 `floating todo.app`。从旧中文名称升级时，退出旧应用，将新应用拖入「应用程序」，再移除旧的 `悬浮待办.app`，避免同时启动两个副本。应用标识不变，原有待办数据与凭据继续使用。
+Windows 应用名称为 **待办清单**，GitHub 下载附件沿用 `floating-todo_` 前缀。应用标识、数据库和程序目录保持兼容；本机升级继续安装到 `D:\software\悬浮待办`，任务数据继续使用 `D:\software\悬浮待办数据`。从旧名称升级时指定原安装目录，安装器仅在目录一致时清理旧名称的安装记录与快捷方式。
 
 ## ⚠️ 重要：首次打开被系统拦截怎么办
 

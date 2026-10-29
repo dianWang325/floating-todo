@@ -1,4 +1,4 @@
-/* 悬浮待办 · 跨平台前端逻辑 (Tauri v2 + 原生 JS) */
+/* 待办清单 · 跨平台前端逻辑 (Tauri v2 + 原生 JS) */
 import { SCHEMA_VERSION, normalizeSnapshot, parseClassification, resolveClassification, editText } from './classification.js';
 import { createClassificationUI } from './classification-ui.js';
 import { reorderVisibleItems } from './todo-order.js';
@@ -474,7 +474,7 @@ function render() {
     const sub =
       cnt === 0 ? "这一页已经清空" : `${DAY_TITLE[state.selectedDay]}还有 ${cnt} 件事`;
     html += `<div class="header">
-      <div class="titles"><h1>悬浮待办</h1><p>${sub}</p></div>
+      <div class="titles"><h1>待办清单</h1><p>${sub}</p></div>
       <div class="spacer"></div>
       <button class="count-pill ${cnt === 0 ? "zero" : ""}" data-act="collapse" title="收起为悬浮栏" aria-label="${cnt} 件待办，收起为悬浮栏">${cnt > 99 ? '99+' : cnt}</button>
       <button class="icon-btn" data-act="maximize" title="最大化 / 还原" aria-label="最大化或还原窗口">□</button>
@@ -595,7 +595,7 @@ let listScrollTop = 0;
 function renderFloating(restoreInput) {
   const count = incompleteCount();
   const capturing = windowUI.mode === 'quick';
-  app.innerHTML = `<div class="mini-bar" aria-label="悬浮待办栏">
+  app.innerHTML = `<div class="mini-bar" aria-label="待办清单栏">
     <span class="mini-grip" title="拖动悬浮栏" aria-hidden="true">${ICONS.grip}</span>
     <button class="mini-count ${count === 0 ? 'zero' : ''}" data-act="expand" title="展开待办面板" aria-label="${DAY_TITLE[state.selectedDay]} ${count} 件待办，展开完整面板"><span>${DAY_TITLE[state.selectedDay]}</span><strong>${count > 99 ? '99+' : count}</strong></button>
     <span class="mini-divider" aria-hidden="true"></span>
@@ -1366,8 +1366,8 @@ window.addEventListener('todo-store-change', () => planner.refresh());
 window.addEventListener('todo-workspace-settings', () => openSettings());
 window.addEventListener('todo-test-notification', async () => {
   try {
-    if (!await ensureNotifyPermission()) throw new Error('请在系统设置中允许“悬浮待办”的通知');
-    await sendSystemNotification({ title: '悬浮待办 · 测试通知', body: '通知已开启，请保持应用在托盘运行。' });
+    if (!await ensureNotifyPermission()) throw new Error('请在系统设置中允许“待办清单”的通知');
+    await sendSystemNotification({ title: '待办清单 · 测试通知', body: '通知已开启，请保持应用在托盘运行。' });
     classificationUI.showNotice('测试通知已发送');
   } catch (error) { classificationUI.showNotice(error.message || String(error)); }
 });

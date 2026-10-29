@@ -44,11 +44,11 @@ export function createReminderRunner({ getDoc, permission, send, persist, onDeli
     try {
       const due = dueReminders(getDoc(), now);
       if (!due.length) return;
-      if (!await permission()) { onError('系统通知未获授权，请在系统设置中允许“悬浮待办”的通知；待提醒任务会保留。'); return; }
+      if (!await permission()) { onError('系统通知未获授权，请在系统设置中允许“待办清单”的通知；待提醒任务会保留。'); return; }
       for (const item of due) {
         // Permission and notification awaits may overlap edits, sync or completion.
         if (!dueReminders(getDoc(), now).some(r => r.key === item.key)) continue;
-        await send({ title: '悬浮待办 · 待办提醒', body: `${item.date} ${item.time}　${item.title}${item.lead ? `（提前 ${item.lead} 分钟）` : ''}` });
+        await send({ title: '待办清单 · 待办提醒', body: `${item.date} ${item.time}　${item.title}${item.lead ? `（提前 ${item.lead} 分钟）` : ''}` });
         const doc = getDoc();
         const state = doc.local.reminders ||= { delivered: {}, snoozes: {} };
         state.delivered ||= {}; state.snoozes ||= {};

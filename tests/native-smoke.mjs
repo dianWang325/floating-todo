@@ -41,6 +41,9 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.waitForSelector('.workspace-sidebar');
   assert.equal(await page.locator('.planner-grid').count(), 1);
+  assert.equal(await page.title(), '待办清单');
+  assert.equal(await page.locator('.workspace-brand strong').textContent(), '待办清单');
+  assert.equal(await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().title()), '待办清单');
   assert.equal(await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().isDecorated()), true);
   await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().minimize());
   await page.waitForFunction(async () => await window.__TAURI__.window.getCurrentWindow().isMinimized(), null, { polling: 100 });

@@ -65,7 +65,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ inputs.release_tag || github.ref_name }}
-          releaseName: "floating todo ${{ inputs.release_tag || github.ref_name }}"
+          releaseName: "待办清单 ${{ inputs.release_tag || github.ref_name }}"
           releaseBody: "下载下方 Windows x64 安装包。"
           releaseDraft: true
           prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
@@ -73,7 +73,7 @@ jobs:
 
       - name: Windows application smoke test
         if: matrix.platform == 'windows-latest'
-        run: ./tests/native-smoke.ps1 -Executable src-tauri/target/release/floating-todo.exe
+        run: ./tests/installer-smoke.ps1
 
       - uses: actions/upload-artifact@v4
         if: always() && matrix.platform == 'windows-latest'
@@ -102,7 +102,7 @@ jobs:
           gh release view "$tag" --repo "${{ github.repository }}" --json assets \
             --jq '.assets[] | "\(.apiUrl | split("/") | last) \(.name)"' | while read -r id name; do
             case "$name" in
-              floating.todo_*|"floating todo_"*) gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" \
+              *_x64-setup.exe) gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$id" \
                     -f name="floating-todo_${name#*_}" && echo "renamed $name -> floating-todo_${name#*_}" ;;
             esac
           done
@@ -110,7 +110,7 @@ jobs:
           if [ -f "$notes" ]; then
             gh release edit "$tag" --repo "${{ github.repository }}" --notes-file "$notes"
           fi
-          gh release edit "$tag" --repo "${{ github.repository }}" --draft=false --title "悬浮待办 $tag"
+          gh release edit "$tag" --repo "${{ github.repository }}" --draft=false --title "待办清单 $tag"
 
   verify_windows:
     if: ${{ inputs.verify_installer }}
@@ -194,4 +194,4 @@ jobs:
           # the exact Windows installer, without rebuilding or retagging it.
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > assets.txt
           grep -q '_x64-setup.exe$' assets.txt
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "docs/releases/$RELEASE_TAG.md" --title "悬浮待办 $RELEASE_TAG" --draft=false
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "docs/releases/$RELEASE_TAG.md" --title "待办清单 $RELEASE_TAG" --draft=false

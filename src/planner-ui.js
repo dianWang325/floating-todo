@@ -44,7 +44,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     const entries = collections(store.doc), current = currentEntities(store.doc);
     const count = id => [...current.values()].filter(r => r.entityType === 'task' && !r.deleted && !r.payload.completed && matchesCollection(r.payload, id, store.doc)).length;
     const item = (id, name, color) => `<button class="workspace-collection" data-p="collection" data-id="${esc(id)}" aria-pressed="${selectedCollection === id}" title="${esc(name)}" ${color ? 'aria-haspopup="menu"' : ''}>${color ? `<i style="background:${color}"></i>` : '<span>▤</span>'}<span>${esc(name)}</span><small>${count(id)}</small></button>`;
-    return `<aside class="workspace-sidebar" aria-label="合集侧边栏"><div class="workspace-brand"><span>✓</span><strong>悬浮待办</strong></div>
+    return `<aside class="workspace-sidebar" aria-label="合集侧边栏"><div class="workspace-brand"><span>✓</span><strong>待办清单</strong></div>
       <nav class="workspace-nav" aria-label="主导航">${[['calendar','▦','日历'],['history','◷','完成记录'],['reminders','♧','提醒中心']].map(([key,icon,name]) => `<button data-p="mode" data-mode="${key}" aria-pressed="${mode === key}"><span>${icon}</span>${name}</button>`).join('')}</nav>
       <div class="workspace-collections-title"><strong>合集</strong><button data-p="collection-new" aria-label="新建合集">＋</button></div>
       <div class="workspace-collections">${item('', '全部任务')}${item('none', '未分类')}${entries.map(c => item(c.id,c.name,c.color)).join('')}</div>
