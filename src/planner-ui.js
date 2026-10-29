@@ -1,6 +1,6 @@
 import { currentEntities, dateInZone, shiftDate } from './sync-model.js';
 import { tasksOnDate, completionHistory, monthDates, toggleTask, createTask, updateTask, taskEvents, calendarRange, timelineItems, formatMinutes, minutesOfDay, layoutTimedTasks } from './planner-model.js';
-import { collections, saveCollection, removeCollection, matchesCollection } from './collections.js';
+import { collections, saveCollection, removeCollection, matchesCollection, collectionId } from './collections.js';
 import { snoozeReminder } from './reminders.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15,7 +15,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   const selectedTasks = (day, current) => tasksOnDate(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc));
   const selectedTimeline = (day, current) => layoutTimedTasks(timelineItems(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc)));
   const today = () => dateInZone(store.doc.sync.timeZone);
-  const projects = value => `<option value="">${value === undefined ? '全部合集' : '未分类'}</option>` + [...currentEntities(store.doc).values()].filter(r => r.entityType === 'projects' && !r.deleted).map(r => `<option value="${esc(r.entityId)}" ${r.entityId === value ? 'selected' : ''}>${esc(r.payload.name)}</option>`).join('');
+  const projects = value => `<option value="">${value === undefined ? '全部合集' : '未分类'}</option>` + collections(store.doc).map(c => `<option value="${esc(c.id)}" ${c.id === collectionId(store.doc, value) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
   const stamp = t => t.completedAt ? new Intl.DateTimeFormat('zh-CN', { timeZone: store.doc.sync.timeZone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(t.completedAt)) : '旧记录：完成时间未知';
   const weekday = d => new Intl.DateTimeFormat('zh-CN', { timeZone: 'UTC', weekday: 'short' }).format(new Date(d + 'T12:00:00Z'));
   const persistPrefs = () => {
@@ -113,7 +113,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
 
   function timeCalendar(current, dates) {
     const height = 24 * hourHeight;
-    const projectColor = task => current.get(`projects:${task.projectId}`)?.payload.color || '#4d83d4';
+    const projectColor = task => current.get(`projects:${collectionId(store.doc, task.projectId)}`)?.payload.color || '#4d83d4';
     return `<section class="timeline-panel" aria-label="${{ day: '日', three: '三日', week: '周' }[view]}时间轴"><div class="time-grid-scroll"><div class="time-grid" style="--days:${dates.length};--hour-height:${hourHeight}px;--grid-height:${height}px">
       <div class="time-grid-sticky"><div class="time-date-row"><div class="time-zone-label">GMT${new Intl.DateTimeFormat('en', { timeZone: store.doc.sync.timeZone, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName').value.replace('GMT', '')}</div>${dates.map(d => `<button class="time-date ${d === today() ? 'today' : ''}" data-p="select-day" data-date="${d}" aria-pressed="${d === date}"><span>${weekday(d)}</span><strong>${Number(d.slice(-2))}</strong></button>`).join('')}</div>
       <div class="time-allday-row"><span class="time-allday-label">全天</span>${dates.map(d => `<div class="time-allday-cell" data-date="${d}">${selectedTasks(d, current).filter(t => !t.time).map(t => `<button class="allday-task ${t.completed ? 'done' : ''}" data-p="edit" data-id="${esc(t.id)}" data-date="${d}" title="${esc(t.title)}" style="--task-color:${projectColor(t)}">${t.completed ? '✓ ' : ''}${esc(t.title)}</button>`).join('')}<button class="allday-add" data-p="slot" data-date="${d}" data-time="" aria-label="${d} 添加全天任务">＋</button></div>`).join('')}</div></div>
@@ -122,7 +122,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   }
 
   function history() {
-    const rows = completionHistory(store.doc, { from, to, query, project }).filter(t => matchesCollection(t, selectedCollection, store.doc)), days = new Map();
+    const rows = completionHistory(store.doc, { from, to, query }).filter(t => matchesCollection(t, project, store.doc) && matchesCollection(t, selectedCollection, store.doc)), days = new Map();
     for (const t of rows) days.set(t.date, (days.get(t.date) || 0) + 1);
     return `<form data-p-form="filter" class="planner-filters"><label>起始日期<input name="from" type="date" value="${from}" required></label><label>结束日期<input name="to" type="date" value="${to}" required></label><label>搜索<input name="query" value="${esc(query)}" placeholder="标题或描述"></label><label>合集<select name="project">${projects(project || undefined)}</select></label><button type="submit">查询</button><button type="button" data-p="week">近 7 天</button></form>
       <div class="planner-summary"><strong>${rows.length}<span>次完成</span></strong><strong>${days.size}<span>个活跃日</span></strong><strong>${rows.filter(t => t.kind === 'daily').length}<span>次打卡</span></strong></div>

@@ -29,3 +29,18 @@ test('deleting a collection retains tasks, daily completion and sync history', (
   assert.equal(currentEntities(other).get(`task:${task}`).payload.completed, true);
   assert.equal(collections(other).length, 0);
 });
+
+test('synced category aliases filter and delete together; recreating a name returns its actual identifier', () => {
+  const a = newDocument(), b = newDocument();
+  writeRevision(a, 'projects', 'a', { id: 'a', name: '工作', color: '#123456' });
+  writeRevision(b, 'projects', 'b', { id: 'b', name: '工作', color: '#abcdef' });
+  const task = createTask(b, { title: '另一台设备的任务', scheduledDate: '2026-10-29', projectId: 'b' });
+  mergeRevisions(a, b.revisions);
+  assert.equal(collections(a).length, 1); assert.equal(collections(a)[0].id, 'a');
+  assert.ok(matchesCollection(currentEntities(a).get(`task:${task}`).payload, 'a', a));
+  removeCollection(a, 'a');
+  assert.equal(currentEntities(a).get(`task:${task}`).payload.projectId, null);
+  const recreated = saveCollection(a, { name: '工作' });
+  assert.equal(recreated, 'a'); assert.equal(collections(a)[0].id, recreated);
+  assert.equal(collections(a).length, 1);
+});
