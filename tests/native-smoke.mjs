@@ -37,6 +37,10 @@ try {
     if (!page) await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!page) throw new Error('Tauri application page not found');
+  const identifier = await page.evaluate(() => window.__TAURI__.app.getIdentifier());
+  if (process.env.GITHUB_ACTIONS !== 'true' && !identifier.endsWith('.native-smoke')) {
+    throw new Error('Local native smoke requires an isolated .native-smoke application identifier to protect existing tasks');
+  }
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.waitForSelector('.workspace-sidebar');
@@ -104,10 +108,18 @@ try {
   await page.screenshot({ path: join(output, 'calendar.png'), omitBackground: true });
   await page.locator('[data-view="day"]').click();
   assert.equal(await page.locator('.time-day-canvas').count(), 1);
-  await page.locator('[data-p="new"]').click();
+  await page.locator('.time-grid-scroll').evaluate(e => { e.scrollTop = 12 * 72; });
+  const canvas = await page.locator('.time-day-canvas').boundingBox();
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + 14 * 72);
+  await page.mouse.down();
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + 15.5 * 72, { steps: 8 });
+  assert.equal(await page.locator('.time-selection').textContent(), '14:00 — 15:30');
+  await page.screenshot({ path: join(output, 'time-selection.png'), omitBackground: true });
+  await page.mouse.up();
+  await page.locator('[data-p-form="add"]').waitFor();
+  assert.equal(await page.locator('[data-p-form="add"] [name="time"]').inputValue(), '14:00');
+  assert.equal(await page.locator('[data-p-form="add"] [name="duration"]').inputValue(), '90');
   await page.locator('[data-p-form="add"] [name="title"]').fill('验证原生日历');
-  await page.locator('[data-p-form="add"] [name="time"]').fill('14:00');
-  await page.locator('[data-p-form="add"] [name="duration"]').fill('90');
   await page.locator('[data-p-form="add"] button[type="submit"]').click();
   await page.locator('.time-block').filter({ hasText: '验证原生日历' }).waitFor({ state: 'attached' });
   assert.equal(await page.locator('.time-block').filter({ hasText: '验证原生日历' }).count(), 1);
