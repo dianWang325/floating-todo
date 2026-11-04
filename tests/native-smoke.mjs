@@ -73,6 +73,8 @@ try {
   await page.locator('[data-p="close"]').click();
   await page.waitForSelector('[data-act="collapse"]');
   await page.waitForFunction(async () => !await window.__TAURI__.window.getCurrentWindow().isDecorated(), null, { polling: 100 });
+  // Decorations finish changing before the async workspace-to-widget resize.
+  await page.waitForFunction(() => Math.abs(innerWidth - 420) <= 1 && Math.abs(innerHeight - 680) <= 1, null, { polling: 100 });
   await page.evaluate(async () => {
     const api = window.__TAURI__.window;
     await window.__TAURI__.core.invoke('set_window_screen_position', { x: 80, y: 80 });
