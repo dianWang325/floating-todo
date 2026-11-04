@@ -138,6 +138,14 @@ try {
   await page.locator('.planner-history strong').filter({ hasText: '验证原生日历' }).waitFor({ state: 'attached' });
   assert.equal(await page.locator('.planner-history strong').filter({ hasText: '验证原生日历' }).count(), 1);
   await page.screenshot({ path: join(output, 'history.png'), omitBackground: true });
+  const completedRow = page.locator('[data-planner-task]').filter({ hasText: '验证原生日历' });
+  await completedRow.getByRole('button', { name: '删除 验证原生日历', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal(await completedRow.getByRole('button', { name: '删除 验证原生日历', exact: true }).count(), 1);
+  await completedRow.getByRole('button', { name: '删除 验证原生日历', exact: true }).click();
+  await page.getByRole('button', { name: '确认删除', exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-planner-task]')].some(e => e.textContent.includes('验证原生日历') && e.textContent.includes('已删除')));
+  await page.screenshot({ path: join(output, 'deleted-history.png'), omitBackground: true });
   await page.getByRole('button', { name: '▧ 悬浮窗模式', exact: true }).click();
   await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, original);
   assert.deepEqual(errors, []);

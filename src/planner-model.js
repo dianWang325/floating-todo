@@ -66,6 +66,13 @@ export function updateTask(doc, id, patch) {
   return writeRevision(doc, 'task', id, payload);
 }
 
+// Keep the winning payload and completion records for history and sync.
+export function deleteTask(doc, id) {
+  const revision = currentEntities(doc).get(`task:${id}`);
+  if (!revision || revision.deleted) throw new Error('任务已不存在，请刷新后重试');
+  return writeRevision(doc, 'task', id, revision.payload, { deleted: true });
+}
+
 export function toggleTask(doc, id, date, now = Date.now()) {
   const r = currentEntities(doc).get(`task:${id}`);
   if (!r || r.deleted) throw new Error('任务已不存在');

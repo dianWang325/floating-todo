@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newDocument, currentEntities, projectView, commitView, migrateSnapshot, mergeRevisions, writeRevision, shiftDate, dateInZone } from '../src/sync-model.js';
-import { createTask, updateTask, toggleTask, tasksOnDate, completionHistory, monthDates } from '../src/planner-model.js';
+import { createTask, updateTask, deleteTask, toggleTask, tasksOnDate, completionHistory, monthDates } from '../src/planner-model.js';
 import { dueReminders, createReminderRunner, snoozeReminder, zonedTime } from '../src/reminders.js';
 
 const date = '2026-10-27', now = Date.parse(date + 'T02:00:00Z'); // 10:00 Shanghai
@@ -38,6 +38,26 @@ test('habit per-day completions survive rollover, deletion and export-like merge
   const r = currentEntities(d).get(`task:${id}`); writeRevision(d, 'task', id, r.payload, { deleted: true });
   assert.ok(completionHistory(d).every(t => t.deleted));
   const other = doc(); mergeRevisions(other, d.revisions);
+  assert.deepEqual(completionHistory(other), completionHistory(d));
+});
+
+test('deleting tasks writes a sync tombstone, stops reminders and preserves completion history and unrelated records', () => {
+  const d = doc(), pending = task(d), completed = task(d, { title: '已完成' }), daily = task(d, { title: '每天重复' }), keep = task(d, { title: '保留' });
+  toggleTask(d, completed, date, now);
+  updateTask(d, daily, { kind: 'daily', scheduledDate: null, createdAt: now - 86400000 });
+  toggleTask(d, daily, date, now);
+  const before = structuredClone(d.revisions), settings = structuredClone(d.local.settings);
+  deleteTask(d, pending); deleteTask(d, completed); deleteTask(d, daily);
+  assert.deepEqual(tasksOnDate(d, date).map(t => t.id), [keep]);
+  assert.ok(!tasksOnDate(d, shiftDate(date, 1)).some(t => t.id === daily));
+  assert.deepEqual(completionHistory(d).map(t => t.id).sort(), [completed, daily].sort());
+  assert.ok(completionHistory(d).every(t => t.deleted));
+  assert.ok(!dueReminders(d, now).some(t => [pending, completed, daily].includes(t.taskId)));
+  assert.deepEqual(d.local.settings, settings);
+  assert.deepEqual(d.revisions.slice(0, before.length), before);
+  assert.throws(() => updateTask(d, pending, { title: '不能编辑' }), /不存在/);
+  const other = doc(); mergeRevisions(other, d.revisions);
+  assert.deepEqual(tasksOnDate(other, date).map(t => t.id), [keep]);
   assert.deepEqual(completionHistory(other), completionHistory(d));
 });
 

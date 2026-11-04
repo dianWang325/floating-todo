@@ -61,6 +61,19 @@
 .planner-add button[type="submit"], .planner-editor button[type="submit"] { color: white; background: var(--accent); border-color: transparent; }
 .planner-task { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid rgba(var(--segment-bg), .09); }
 .planner-task-body { flex: 1; min-width: 0; }
+.task-context button { display: block; width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--text); padding: 8px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.task-context button:hover, .task-context button:focus-visible { background: var(--calendar-selected); }
+.planner-shell .task-danger, .task-context .task-danger { color: var(--danger, #d33); }
+.task-delete-overlay { position: fixed; inset: 0; z-index: 720; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.25); }
+.task-delete-dialog { box-sizing: border-box; width: min(360px, 100%); max-height: 100%; overflow: auto; padding: 22px; border-radius: 12px; background: rgb(var(--panel-top)); color: var(--text); box-shadow: 0 15px 50px #0003; }
+.task-delete-dialog h3 { font-size: 17px; margin: 0 0 14px; }
+.task-delete-dialog strong { font-size: 14px; overflow-wrap: anywhere; }
+.task-delete-dialog p { font-size: 13px; line-height: 1.7; color: var(--text-secondary); margin: 12px 0 20px; }
+.task-delete-dialog > div { display: flex; justify-content: flex-end; gap: 10px; }
+.task-delete-dialog button { font: inherit; font-size: 13px; cursor: pointer; padding: 7px 14px; border-radius: 6px; color: var(--text); border: 1px solid var(--calendar-line); background: rgba(var(--control-bg), .8); }
+.task-delete-dialog .task-danger { color: white; background: #c83b36; border-color: transparent; }
+.task-delete-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.planner-open:has(.task-delete-overlay) .classification-notice { z-index: 760; }
 .planner-task strong { display: block; font-size: 13px; overflow-wrap: anywhere; font-weight: 500; }
 .planner-task small { display: block; font-size: 11px; line-height: 1.6; color: var(--text-secondary); margin-top: 4px; }
 .planner-task p { font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
