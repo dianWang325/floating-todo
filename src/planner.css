@@ -144,6 +144,8 @@
 .time-ruler > span:first-child { transform: none; }
 .time-day-canvas { position: relative; border-left: 1px solid rgba(var(--segment-bg), .09); cursor: crosshair; background-image: linear-gradient(to bottom, rgba(var(--segment-bg), .1) 1px, transparent 1px), linear-gradient(to bottom, rgba(var(--segment-bg), .045) 1px, transparent 1px); background-size: 100% var(--hour-height), 100% calc(var(--hour-height) / 2); }
 .time-day-canvas.today { background-color: rgba(var(--accent-rgb), .018); }
+.time-day-canvas { touch-action: none; }
+.time-selection { position: absolute; z-index: 15; left: 2px; right: 2px; min-height: 12px; box-sizing: border-box; padding: 2px 5px; overflow: hidden; border: 1px solid var(--accent); border-radius: 4px; background: rgba(var(--accent-rgb), .16); color: var(--text); font-size: 11px; font-weight: 600; pointer-events: none; }
 .time-block { position: absolute; border-left: 3px solid var(--task-color); background: rgba(var(--accent-rgb), .13); background: color-mix(in srgb, var(--task-color) 14%, rgb(var(--panel-top))); color: var(--text); border-radius: 5px; box-sizing: border-box; overflow: hidden; z-index: 3; cursor: grab; }
 .time-block.done { opacity: .55; }
 .time-block.done strong { text-decoration: line-through; }

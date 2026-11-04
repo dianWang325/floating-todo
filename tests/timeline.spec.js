@@ -102,6 +102,80 @@ test('clicking a time slot creates a task at the correct minute, then edits and 
   await page.locator('[data-mode="history"]').click(); await expect(page.locator('.planner-history')).toContainText('下午阅读');
 });
 
+for (const view of ['day', 'three', 'week']) test(`${view}: drag-selecting a time range creates only the confirmed task and preserves existing tasks`, async ({ page }) => {
+  await boot(page); await page.locator('[data-act="planner"]').click(); await page.locator(`[data-view="${view}"]`).click();
+  await page.locator('.time-grid-scroll').evaluate(e => { e.scrollTop = 10 * 72; });
+  const before = await readDoc(page), canvas = page.locator('.time-day-canvas').last();
+  const day = await canvas.getAttribute('data-date'), box = await canvas.boundingBox(), x = box.x + box.width / 2;
+  await page.mouse.move(x, box.y + 12.25 * 72); await page.mouse.down();
+  await page.mouse.move(x, box.y + 14.75 * 72, { steps: 8 });
+  await expect(page.locator('.time-selection')).toHaveText('12:15 — 14:45');
+  expect((await readDoc(page)).revisions).toEqual(before.revisions);
+  await page.mouse.up();
+  await expect(page.locator('.time-selection')).toHaveCount(0);
+  await expect(page.locator('[data-p-form="add"] [name="time"]')).toHaveValue('12:15');
+  await expect(page.locator('[data-p-form="add"] [name="duration"]')).toHaveValue('150');
+  expect((await readDoc(page)).revisions).toEqual(before.revisions);
+  await page.locator('[data-p-form="add"] [name="title"]').fill('拖选创建待办');
+  await page.locator('[data-p-form="add"] button[type="submit"]').click();
+  const after = await readDoc(page);
+  expect(after.revisions.filter(r => r.payload.title === '拖选创建待办')).toHaveLength(1);
+  expect(after.revisions.find(r => r.payload.title === '拖选创建待办').payload).toMatchObject({ scheduledDate: day, time: '12:15', durationMinutes: 150 });
+  for (const revision of before.revisions) expect(after.revisions).toContainEqual(revision);
+});
+
+test('reverse selection, zoom, day-end clamping, cancellation and drafts remain consistent', async ({ page }) => {
+  await boot(page); await page.locator('[data-act="planner"]').click(); await page.locator('[data-view="day"]').click();
+  await page.locator('[data-p="new"]').click();
+  await page.locator('[data-p-form="add"] [name="title"]').fill('未保存的标题');
+  await page.getByRole('button', { name: '放大时间轴', exact: true }).click();
+  await page.locator('.time-grid-scroll').evaluate(e => { e.scrollTop = 9 * 84; });
+  const canvas = page.locator('.time-day-canvas');
+  let box = await canvas.boundingBox(), x = box.x + box.width / 2;
+  await page.mouse.move(x, box.y + 13.5 * 84); await page.mouse.down();
+  await page.mouse.move(x, box.y + 11 * 84, { steps: 8 }); await page.mouse.up();
+  await expect(page.locator('[data-p-form="add"] [name="time"]')).toHaveValue('11:00');
+  await expect(page.locator('[data-p-form="add"] [name="duration"]')).toHaveValue('150');
+  await expect(page.locator('[data-p-form="add"] [name="title"]')).toHaveValue('未保存的标题');
+  const before = (await readDoc(page)).revisions;
+  for (const cancel of ['escape', 'blur', 'pointercancel']) {
+    box = await canvas.boundingBox();
+    await page.mouse.move(x, box.y + 12 * 84); await page.mouse.down();
+    await page.mouse.move(x, box.y + 13 * 84, { steps: 4 });
+    await expect(page.locator('.time-selection')).toBeVisible();
+    if (cancel === 'escape') await page.keyboard.press('Escape');
+    else if (cancel === 'blur') await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    else await page.locator('.planner-overlay').dispatchEvent('pointercancel', { pointerId: 1 });
+    await page.mouse.up();
+    await expect(page.locator('.time-selection')).toHaveCount(0);
+    await expect(page.locator('[data-p-form="add"] [name="time"]')).toHaveValue('11:00');
+    await expect(page.locator('[data-p-form="add"] [name="title"]')).toHaveValue('未保存的标题');
+  }
+  await page.locator('.time-grid-scroll').evaluate(e => { e.scrollTop = e.scrollHeight; });
+  box = await canvas.boundingBox();
+  await page.mouse.move(x, box.y + 23.5 * 84); await page.mouse.down();
+  await page.mouse.move(x, box.y + 24 * 84 - 2, { steps: 5 }); await page.mouse.up();
+  await expect(page.locator('[data-p-form="add"] [name="time"]')).toHaveValue('23:30');
+  await expect(page.locator('[data-p-form="add"] [name="duration"]')).toHaveValue('30');
+  expect((await readDoc(page)).revisions).toEqual(before);
+});
+
+test('range selection scrolls at the viewport edge and cancels safely when the view changes', async ({ page }) => {
+  await boot(page); await page.locator('[data-act="planner"]').click(); await page.locator('[data-view="day"]').click();
+  const scroll = page.locator('.time-grid-scroll');
+  await scroll.evaluate(e => { e.scrollTop = 10 * 72; });
+  const canvas = await page.locator('.time-day-canvas').boundingBox(), viewport = await scroll.boundingBox();
+  const before = (await readDoc(page)).revisions;
+  await page.mouse.move(canvas.x + 150, canvas.y + 12 * 72); await page.mouse.down();
+  await page.mouse.move(canvas.x + 150, viewport.y + viewport.height - 3, { steps: 4 });
+  await expect.poll(() => scroll.evaluate(e => e.scrollTop)).toBeGreaterThan(750);
+  await page.locator('[data-view="month"]').evaluate(e => e.click());
+  await page.mouse.up();
+  await expect(page.locator('.time-selection')).toHaveCount(0);
+  await expect(page.locator('.planner-grid')).toBeVisible();
+  expect((await readDoc(page)).revisions).toEqual(before);
+});
+
 test('range and zoom preferences persist, new-task drafts survive view changes', async ({ page }) => {
   await boot(page); await page.locator('[data-act="planner"]').click();
   await page.locator('[data-p-form="add"] [name="title"]').fill('尚未保存的安排');

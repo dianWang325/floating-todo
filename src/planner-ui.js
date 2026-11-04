@@ -2,6 +2,7 @@ import { currentEntities, dateInZone, shiftDate } from './sync-model.js';
 import { tasksOnDate, completionHistory, monthDates, toggleTask, createTask, updateTask, taskEvents, calendarRange, timelineItems, formatMinutes, minutesOfDay, layoutTimedTasks } from './planner-model.js';
 import { collections, saveCollection, removeCollection, matchesCollection, collectionId } from './collections.js';
 import { snoozeReminder } from './reminders.js';
+import { attachTimelineSelection } from './timeline-selection.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const collectionColors = [['红色','#ff3b30'],['橙色','#ff9500'],['黄色','#b58a00'],['绿色','#28a745'],['蓝色','#007aff'],['紫色','#af52de'],['灰色','#8e8e93']];
@@ -10,7 +11,7 @@ const leads = value => [0, 5, 10, 15, 30, 60, 1440].map(n => `<option value="${n
 // One authoritative store: expanding the existing window avoids competing SQLite writers.
 export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowApi, onModeChange = () => {}, nativeFrame = false, beforeWindowClose = () => {} }) {
   let host, mode = 'calendar', date, month, from, to, query = '', project = '', busy = false, editing = null, restoreSize, restorePosition, restoreMaximized = false, previousFocus, opening = false;
-  let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null, nativeTitlebar = false, closeUnlisten = null;
+  let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null, nativeTitlebar = false, closeUnlisten = null, timeSelection = null;
   const emptyDraft = () => ({ title: '', time: '', duration: '30', lead: '0', project: '' });
   let addDraft = emptyDraft(), editDraft = null, selectedCollection = '', collectionEditor = null, deletingCollection = false, contextMenu = null;
   const selectedTasks = (day, current) => tasksOnDate(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc));
@@ -85,6 +86,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   }
 
   function render(resetScroll = false) {
+    timeSelection?.cancel();
     if (!host) return;
     const scroll = host.querySelector('.time-grid-scroll');
     if (scroll && !resetScroll) timelineScroll = { top: scroll.scrollTop, left: scroll.scrollLeft };
@@ -95,7 +97,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
 
       <div class="planner-content ${mode === 'calendar' ? 'calendar-content' : ''}">${mode === 'calendar' ? calendar() : mode === 'history' ? history() : reminders()}</div>
       <p class="planner-status" role="status"></p>
-      <footer class="planner-footer">${esc(store.doc.sync.timeZone)} · ${mode === 'calendar' && view !== 'month' ? '点击空白时间安排任务，拖动普通任务可调整日期和时间。' : '选择日期安排任务，完成记录按实际完成日期统计。'}</footer>
+      <footer class="planner-footer">${esc(store.doc.sync.timeZone)} · ${mode === 'calendar' && view !== 'month' ? '在空白时间轨拖选时段创建待办，按 Esc 取消；拖动已有任务可改期。' : '选择日期安排任务，完成记录按实际完成日期统计。'}</footer>
     </section>${contextMenuHTML()}`;
     positionContextMenu();
     host.classList.toggle('native-titlebar', nativeTitlebar);
@@ -190,6 +192,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   }
 
   async function closeWindow() {
+    timeSelection?.cancel();
     captureDrafts(); dismissContextMenu();
     try {
       beforeWindowClose();
@@ -224,9 +227,11 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   }
 
   const slotTime = (canvas, y) => formatMinutes(Math.max(0, Math.min(1425, Math.round((y - canvas.getBoundingClientRect().top) / hourHeight * 4) * 15)));
-  function openSlot(day, time) {
+  function openSlot(day, time, duration) {
     captureDrafts(); date = day; month = date.slice(0, 7); editing = null; editDraft = null;
-    inspectorOpen = true; addDraft.time = time; render(); host.querySelector('.planner-add input')?.focus();
+    inspectorOpen = true; addDraft.time = time;
+    if (duration !== undefined) addDraft.duration = String(duration);
+    render(); host.querySelector('.planner-add input')?.focus();
   }
 
   async function close() {
@@ -238,6 +243,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
         store.persist().catch(error => notify(`窗口尺寸保存失败：${error}`));
       }
     } catch (error) { notify(`窗口状态读取失败：${error}`); }
+    timeSelection?.destroy(); timeSelection = null;
     host.remove(); host = null;
     document.documentElement.classList.remove('planner-open');
     document.getElementById('panel').inert = false;
@@ -287,6 +293,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       catch (error) { await useNativeTitlebar(false); notify(`系统关闭事件不可用，已保留页面内窗口按钮：${error}`); }
     }
     host = document.createElement('div'); host.className = 'planner-overlay'; document.body.append(host);
+    timeSelection = attachTimelineSelection(host, { hourHeight: () => hourHeight, isBusy: () => busy || !!activeDrag, onSelect: ({ day, time, duration }) => openSlot(day, time, duration) });
     opening = false;
     host.addEventListener('mousedown', event => { if (event.button === 0 && event.target.closest('.planner-header') && !event.target.closest('button')) nativeWindow?.startDragging().catch(error => notify(String(error))); });
     host.addEventListener('dblclick', event => { if (event.target.closest('.planner-header') && !event.target.closest('button')) toggleMaximize(); });
@@ -340,11 +347,6 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
         }
       } catch (error) { notify(error.message || String(error)); }
     });
-    host.addEventListener('click', event => {
-      const canvas = event.target.closest('.time-day-canvas');
-      if (!canvas || event.target.closest('.time-block') || busy) return;
-      openSlot(canvas.dataset.date, slotTime(canvas, event.clientY));
-    });
     host.addEventListener('dragstart', event => {
       const block = event.target.closest('.time-block[draggable="true"]'); if (!block) return;
       captureDrafts(); activeDrag = block.dataset.taskId;
@@ -376,6 +378,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     render(); host.querySelector('[data-p="mode"]').focus();
   }
   document.addEventListener('keydown', event => {
+    if (timeSelection?.active && event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); timeSelection.cancel(); return; }
     if (!host || document.querySelector('.overlay')) return;
     const collectionButton = event.target.closest?.('.workspace-collection[aria-haspopup="menu"]');
     if (collectionButton && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
@@ -401,7 +404,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   document.addEventListener('pointerdown', event => {
     if (contextMenu && !event.target.closest('.collection-context')) dismissContextMenu();
   }, true);
-  window.addEventListener('resize', () => dismissContextMenu());
+  window.addEventListener('resize', () => { timeSelection?.cancel(); dismissContextMenu(); });
   window.addEventListener('blur', () => { if (!document.activeElement?.matches('.collection-custom-color input')) dismissContextMenu(); });
   const nowTimer = setInterval(() => {
     if (!host) return;
@@ -414,5 +417,5 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
     }
   }, 60000);
   window.addEventListener('beforeunload', () => clearInterval(nowTimer));
-  return { open, close, refresh: () => { if (host && !host.contains(document.activeElement)) render(); }, get active() { return !!host; } };
+  return { open, close, refresh: () => { if (host && !timeSelection?.active && !host.contains(document.activeElement)) render(); }, get active() { return !!host; } };
 }
