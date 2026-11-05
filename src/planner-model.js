@@ -96,10 +96,10 @@ export function toggleTask(doc, id, date, now = Date.now()) {
   return updateTask(doc, id, { completed, ...(completed ? { completedAt: now, completedDate: dateInZone(doc.sync.timeZone, new Date(now)) } : {}) });
 }
 
-export function createTask(doc, { title, scheduledDate, time = null, projectId = null, remindLeadMinutes = 0, durationMinutes = 30, endDate = null, endTime = null }) {
+export function createTask(doc, { title, scheduledDate, time = null, projectId = null, remindLeadMinutes = 0, durationMinutes = 30, endDate = null, endTime = null, tagIds = [] }) {
   const id = crypto.randomUUID();
   if (!title.trim()) throw new Error('请填写任务标题');
-  writeRevision(doc, 'task', id, normalizeRange({ id, title: title.trim(), scheduledDate, time, endDate, endTime, projectId, remindLeadMinutes, durationMinutes, tagIds: [], detail: '', kind: 'one_off', completed: false, createdAt: Date.now() }));
+  writeRevision(doc, 'task', id, normalizeRange({ id, title: title.trim(), scheduledDate, time, endDate, endTime, projectId, remindLeadMinutes, durationMinutes, tagIds: [...tagIds], detail: '', kind: 'one_off', completed: false, createdAt: Date.now() }));
   return id;
 }
 

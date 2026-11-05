@@ -167,10 +167,28 @@ try {
   await page.locator('[data-view="three"]').click();
   await page.waitForFunction(() => [...document.querySelectorAll('.time-block')].filter(e => e.textContent.includes('原生跨天验证')).length === 3);
   await page.screenshot({path:join(output,'range-timeline.png')});
+  await page.locator('[data-mode="projects"]').click();
+  await page.locator('[data-p="work-project-new"]').click();
+  await page.locator('[data-p-form="work-project-create"] [name="name"]').fill('原生项目验证');
+  await page.locator('[data-p-form="work-project-create"] [type="submit"]').click();
+  await page.locator('.project-plan [name="description"]').fill('尚未拆分任务的想法，先研究方案');
+  await page.locator('.project-plan [name="milestones"]').fill('先验证，再规划执行节点');
+  await page.locator('.project-plan [name="targetDate"]').fill(rangeEnd);
+  await page.locator('.project-plan [type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector('.project-draft-status')?.textContent==='已保存');
+  await page.locator('[data-p="project-task-new"]').click();
+  assert.equal(await page.locator('.planner-add [name="workProjects"]:checked').count(),1);
+  await page.locator('.planner-add [name="title"]').fill('原生项目子任务');
+  await page.locator('.planner-add [type="submit"]').click();
+  await page.locator('[data-mode="projects"]').click();
+  await page.locator('.work-project-card').filter({hasText:'原生项目验证'}).click();
+  await page.locator('.work-project-task').filter({hasText:'原生项目子任务'}).waitFor();
+  assert.equal(await page.locator('.project-plan [name="description"]').inputValue(),'尚未拆分任务的想法，先研究方案');
+  await page.screenshot({path:join(output,'projects.png')});
   await page.getByRole('button', { name: '▧ 悬浮窗模式', exact: true }).click();
   await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, original);
   assert.deepEqual(errors, []);
-  console.log('PASS: native maximize/restore, mini/capture, day/three-day/week timelines, completion history, cross-day ranges, and geometry restoration');
+  console.log('PASS: native maximize/restore, mini/capture, day/three-day/week timelines, completion history, cross-day ranges, project planning, and geometry restoration');
 } catch (error) {
   logs.push(error.stack || String(error));
   if (page) {

@@ -123,7 +123,12 @@ export function validateRevision(r) {
       } else if (p.endTime != null) throw new Error('请填写结束日期');
       break;
     case 'projects': case 'tags':
-      if (p.id !== r.entityId || !text(p.name) || !p.name.trim() || !/^#[0-9a-f]{6}$/i.test(p.color)) throw new Error('同步分类格式不正确'); break;
+      if (p.id !== r.entityId || !text(p.name) || !p.name.trim() || !/^#[0-9a-f]{6}$/i.test(p.color)) throw new Error('同步分类格式不正确');
+      if (r.entityType === 'tags') {
+        for (const [key,limit] of [['description',20000],['milestones',10000]]) if (p[key] != null && (!text(p[key]) || p[key].length > limit)) throw new Error('项目说明或节点内容过长或格式不正确');
+        if (p.targetDate != null && !validDate(p.targetDate)) throw new Error('项目预期完成日期格式不正确');
+      }
+      break;
     case 'completion':
       if (!text(p.taskId) || !validDate(p.date) || typeof p.completed !== 'boolean' || r.entityId !== `${p.taskId}/${p.date}` || (p.completedAt != null && (!Number.isSafeInteger(p.completedAt) || p.completedAt < 0))) throw new Error('打卡记录格式不正确'); break;
     case 'order': if (!Number.isFinite(p.position)) throw new Error('排序格式不正确'); break;
@@ -154,7 +159,7 @@ function taskPayload(task, kind, date) {
 function viewEntities(view) {
   const map = new Map();
   const put = (type, id, payload) => map.set(`${type}:${id}`, { type, id, payload });
-  for (const kind of ['projects', 'tags']) for (const entry of view[kind]) put(kind, entry.id, { id: entry.id, name: entry.name, color: entry.color });
+  for (const kind of ['projects', 'tags']) for (const entry of view[kind]) put(kind, entry.id, { id: entry.id, name: entry.name, color: entry.color, ...(kind === 'tags' ? Object.fromEntries(['description','milestones','targetDate'].filter(key => entry[key] !== undefined).map(key => [key,entry[key]])) : {}) });
   const base = isoDate(view.lastActiveDate);
   DAY_KEYS.forEach((day, offset) => view.itemsByDay[day].forEach(task => put('task', task.id, taskPayload(task, 'one_off', shiftDate(base, offset)))));
   for (const task of view.recurringItems) {

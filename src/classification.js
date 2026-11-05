@@ -32,7 +32,7 @@ export function normalizeSnapshot(raw, base) {
       let canonical = names.get(key);
       if (!canonical) {
         const id = typeof entry.id === "string" && entry.id && !ids.has(entry.id) ? entry.id : newId();
-        canonical = { id, name, color: validColor(entry.color) ? entry.color : PALETTE[catalogs[kind].length % PALETTE.length] };
+        canonical = { id, name, color: validColor(entry.color) ? entry.color : PALETTE[catalogs[kind].length % PALETTE.length], ...(kind === 'tags' ? Object.fromEntries(['description','milestones','targetDate'].filter(key => entry[key] !== undefined).map(key => [key,entry[key]])) : {}) };
         catalogs[kind].push(canonical);
         names.set(key, canonical);
         ids.add(id);

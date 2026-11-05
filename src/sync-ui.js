@@ -52,6 +52,7 @@ export function openSyncSettings(store) {
 function describe(r, store) {
   const p = r.payload;
   if (r.entityType === 'task') return `${p.title}\n${p.detail || ''}\n${p.kind === 'daily' ? '每天' : p.scheduledDate} ${p.time || ''}\n${p.completed ? '已完成' : '未完成'}\n项目：${store.view.projects.find(x => x.id === p.projectId)?.name || (p.projectId ? '已删除项目' : '无')}\n标签：${p.tagIds.map(id => store.view.tags.find(x => x.id === id)?.name || '已删除标签').join('、') || '无'}`;
+  if (r.entityType === 'tags') return `${p.name} · ${p.color}\n预期完成：${p.targetDate || '未设置'}\n${p.description || ''}\n${p.milestones || ''}`;
   if (r.entityType === 'memo') return p.text;
   if (r.entityType === 'completion') return `${p.date} ${p.completed ? '已打卡' : '未打卡'}`;
   if (r.entityType === 'order') return `排序位置：${p.position}`;
@@ -97,7 +98,8 @@ function editVersion(store, conflict, revision, done) {
     fields += `<label class="sync-field">标签（可多选）<select multiple data-field="tagIds">${store.view.tags.map(x => `<option value="${esc(x.id)}" ${p.tagIds.includes(x.id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`;
   } else if (revision.entityType === 'memo') fields = `<label class="sync-field">正文<textarea data-field="text">${esc(p.text)}</textarea></label>`;
   else if (['projects', 'tags'].includes(revision.entityType)) fields = field('name', '名称', p.name) + field('color', '颜色', p.color, 'color');
-  else if (revision.entityType === 'order') fields = field('position', '排序位置', p.position, 'number');
+  if (revision.entityType === 'tags') fields += field('targetDate', '项目预期完成日期', p.targetDate || '', 'date') + `<label class="sync-field">项目说明<textarea data-field="description">${esc(p.description || '')}</textarea></label><label class="sync-field">预期节点<textarea data-field="milestones">${esc(p.milestones || '')}</textarea></label>`;
+  if (revision.entityType === 'order') fields = field('position', '排序位置', p.position, 'number');
   if (revision.entityType === 'completion' || (revision.entityType === 'task' && p.kind === 'one_off')) fields += `<label class="sync-check"><input data-field="completed" type="checkbox" ${p.completed ? 'checked' : ''}>已完成</label>`;
   body.innerHTML = fields + '<p class="sync-help">保存后会替换当前内容，并处理此事项已显示的冲突。</p><p data-sync-message class="sync-error"></p><button class="data-btn" data-save-version>保存并同步</button>';
   body.querySelector('[data-save-version]').onclick = async () => {
@@ -108,6 +110,7 @@ function editVersion(store, conflict, revision, done) {
       body.querySelectorAll('[data-field]').forEach(input => { payload[input.dataset.field] = input.dataset.field === 'tagIds' ? [...input.selectedOptions].map(option => option.value) : input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value; });
       if ('projectId' in payload && !payload.projectId) payload.projectId = null;
       if ('title' in payload && !payload.title.trim()) throw new Error('标题不能为空');
+      if ('targetDate' in payload && !payload.targetDate) payload.targetDate = null;
       if ('time' in payload && !payload.time) payload.time = null;
       writeRevision(store.doc, revision.entityType, revision.entityId, payload, { resolve: true });
       await store.changed(); overlay.remove(); done();
