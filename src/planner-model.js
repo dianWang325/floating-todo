@@ -10,7 +10,10 @@ export function tasksOnDate(doc, date, current = currentEntities(doc)) {
       if (t.createdAt && date < dateInZone(doc.sync.timeZone, new Date(t.createdAt))) continue;
       const completion = current.get(`completion:${t.id}/${date}`)?.payload;
       rows.push({ ...t, date, completed: !!completion?.completed, completedAt: completion?.completedAt ?? null });
-    } else if (t.scheduledDate === date) rows.push({ ...t, date });
+    } else {
+      const interval = taskInterval(t);
+      if (date >= t.scheduledDate && date <= interval.lastDate) rows.push({ ...t, date });
+    }
   }
   return rows.sort((a, b) => Number(a.completed) - Number(b.completed) || (a.time || '24:00').localeCompare(b.time || '24:00') || b.createdAt - a.createdAt);
 }
@@ -60,7 +63,16 @@ export function monthDates(month) {
 export function updateTask(doc, id, patch) {
   const r = currentEntities(doc).get(`task:${id}`);
   if (!r || r.deleted) throw new Error('任务已不存在，请刷新后重试');
-  const payload = { ...r.payload, ...patch, id };
+  let payload = { ...r.payload, ...patch, id };
+  // Moving a range keeps its duration; an explicit end supplied by the editor wins.
+  if (r.payload.endDate && !Object.hasOwn(patch, 'endDate') && (patch.scheduledDate || Object.hasOwn(patch, 'time'))) {
+    const old = taskInterval(r.payload), startDate = payload.scheduledDate;
+    if (payload.time) {
+      const end = Date.parse(startDate) / 60000 + minutesOfDay(payload.time) + old.end - old.start;
+      payload.endDate = new Date(end * 60000).toISOString().slice(0, 10); payload.endTime = formatMinutes(end % 1440);
+    } else { payload.endDate = shiftDate(startDate, Math.round((Date.parse(r.payload.endDate) - Date.parse(r.payload.scheduledDate)) / 86400000)); payload.endTime = null; }
+  }
+  payload = normalizeRange(payload);
   if (!payload.title.trim()) throw new Error('请填写任务标题');
   if (!payload.completed) { delete payload.completedAt; delete payload.completedDate; delete payload.archivedAt; }
   return writeRevision(doc, 'task', id, payload);
@@ -84,10 +96,10 @@ export function toggleTask(doc, id, date, now = Date.now()) {
   return updateTask(doc, id, { completed, ...(completed ? { completedAt: now, completedDate: dateInZone(doc.sync.timeZone, new Date(now)) } : {}) });
 }
 
-export function createTask(doc, { title, scheduledDate, time = null, projectId = null, remindLeadMinutes = 0, durationMinutes = 30 }) {
+export function createTask(doc, { title, scheduledDate, time = null, projectId = null, remindLeadMinutes = 0, durationMinutes = 30, endDate = null, endTime = null }) {
   const id = crypto.randomUUID();
   if (!title.trim()) throw new Error('请填写任务标题');
-  writeRevision(doc, 'task', id, { id, title: title.trim(), scheduledDate, time, projectId, remindLeadMinutes, durationMinutes, tagIds: [], detail: '', kind: 'one_off', completed: false, createdAt: Date.now() });
+  writeRevision(doc, 'task', id, normalizeRange({ id, title: title.trim(), scheduledDate, time, endDate, endTime, projectId, remindLeadMinutes, durationMinutes, tagIds: [], detail: '', kind: 'one_off', completed: false, createdAt: Date.now() }));
   return id;
 }
 
@@ -100,19 +112,42 @@ export function calendarRange(date, view) {
 export const minutesOfDay = time => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
 export const formatMinutes = value => `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 
+// Calendar arithmetic is in wall-clock minutes in the document zone, independent of DST.
+export function taskInterval(task, origin = task.scheduledDate) {
+  const day = Date.parse(origin) / 60000;
+  const start = day + (task.time ? minutesOfDay(task.time) : 0);
+  const end = task.endDate ? Date.parse(task.endDate) / 60000 + (task.time ? minutesOfDay(task.endTime) : 1440) : task.time ? start + (task.durationMinutes || 30) : day + 1440;
+  return { start, end, lastDate: new Date((Math.ceil(end / 1440) * 1440 - 1) * 60000).toISOString().slice(0, 10) };
+}
+function normalizeRange(task) {
+  if (task.endDate && task.time && task.endTime) task.durationMinutes = Date.parse(task.endDate) / 60000 + minutesOfDay(task.endTime) - Date.parse(task.scheduledDate) / 60000 - minutesOfDay(task.time);
+  return task;
+}
 export function timelineItems(doc, date, current = currentEntities(doc)) {
-  const rows = [];
-  for (const origin of [shiftDate(date, -1), date]) {
-    for (const task of tasksOnDate(doc, origin, current)) {
-      if (!task.time) continue;
-      const offset = origin === date ? 0 : -1440;
-      const start = minutesOfDay(task.time) + offset;
-      const end = start + (task.durationMinutes || 30);
+  const rows = [], day = Date.parse(date) / 60000;
+  for (const r of current.values()) {
+    if (r.entityType !== 'task' || r.deleted || !r.payload.time) continue;
+    const t = r.payload;
+    const origins = t.kind === 'daily' ? [shiftDate(date, -1), date] : [t.scheduledDate];
+    for (const origin of origins) {
+      const task = t.kind === 'daily' ? tasksOnDate(doc, origin, current).find(row => row.id === t.id) : { ...t, date: origin };
+      if (!task) continue;
+      const interval = taskInterval(task, origin), start = interval.start - day, end = interval.end - day;
       if (end <= 0 || start >= 1440) continue;
       rows.push({ ...task, displayDate: date, start: Math.max(0, start), end: Math.min(1440, end), continuesBefore: start < 0, continuesAfter: end > 1440 });
     }
   }
   return layoutTimedTasks(rows);
+}
+// One segment per task and visible week, assigned a stable non-overlapping lane.
+export function calendarSpans(tasks, dates, allDayOnly = false) {
+  const unique = new Map(tasks.map(t => [t.id, t]));
+  const spans = [...unique.values()].filter(t => t.kind !== 'daily' && (!allDayOnly || !t.time) && taskInterval(t).lastDate > t.scheduledDate && t.scheduledDate <= dates.at(-1) && taskInterval(t).lastDate >= dates[0])
+    .map(t => { const end = taskInterval(t).lastDate; return { ...t, column: Math.max(0, dates.findIndex(d => d >= t.scheduledDate)), last: dates.findLastIndex(d => d <= end), continuesBefore: t.scheduledDate < dates[0], continuesAfter: end > dates.at(-1) }; })
+    .filter(t => t.last >= t.column).sort((a,b) => a.column - b.column || b.last - a.last || a.id.localeCompare(b.id));
+  const lanes = [];
+  for (const t of spans) { let lane = lanes.findIndex(end => end < t.column); if (lane < 0) lane = lanes.length; lanes[lane] = t.last; t.lane = lane; }
+  return spans;
 }
 
 // Partition connected overlapping intervals, then give every task in a group

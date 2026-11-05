@@ -146,10 +146,31 @@ try {
   await page.getByRole('button', { name: '确认删除', exact: true }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-planner-task]')].some(e => e.textContent.includes('验证原生日历') && e.textContent.includes('已删除')));
   await page.screenshot({ path: join(output, 'deleted-history.png'), omitBackground: true });
+  await page.locator('[data-mode="calendar"]').click();
+  await page.locator('[data-view="month"]').click();
+  await page.locator('[data-p="new"]').click();
+  const rangeForm = page.locator('.planner-add');
+  await rangeForm.locator('[name="title"]').fill('原生跨天验证');
+  const rangeStart = await rangeForm.locator('[name="date"]').inputValue();
+  const rangeEnd = new Date(Date.parse(rangeStart) + 5 * 86400000).toISOString().slice(0,10);
+  await rangeForm.getByLabel('设置时间段').check();
+  await rangeForm.locator('[name="endDate"]').fill(rangeEnd);
+  await rangeForm.locator('[type="submit"]').click();
+  await page.locator('.calendar-span').filter({hasText:'原生跨天验证'}).first().waitFor();
+  assert.ok(await page.locator('.calendar-span').filter({hasText:'原生跨天验证'}).count() >= 1);
+  await page.screenshot({path:join(output,'range-month.png')});
+  await page.locator('.calendar-span').filter({hasText:'原生跨天验证'}).first().click();
+  const rangeEditor = page.locator('.planner-editor');
+  assert.equal(await rangeEditor.locator('[name="endDate"]').inputValue(),rangeEnd);
+  await rangeEditor.getByLabel('全天',{exact:true}).uncheck();
+  await rangeEditor.locator('[type="submit"]').click();
+  await page.locator('[data-view="three"]').click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.time-block')].filter(e => e.textContent.includes('原生跨天验证')).length === 3);
+  await page.screenshot({path:join(output,'range-timeline.png')});
   await page.getByRole('button', { name: '▧ 悬浮窗模式', exact: true }).click();
   await page.waitForFunction(size => innerWidth === size.width && innerHeight === size.height, original);
   assert.deepEqual(errors, []);
-  console.log('PASS: native maximize/restore, mini/capture, day/three-day/week timelines, completion history, and geometry restoration');
+  console.log('PASS: native maximize/restore, mini/capture, day/three-day/week timelines, completion history, cross-day ranges, and geometry restoration');
 } catch (error) {
   logs.push(error.stack || String(error));
   if (page) {

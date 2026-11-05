@@ -1,5 +1,5 @@
 import { currentEntities, dateInZone, shiftDate } from './sync-model.js';
-import { tasksOnDate, completionHistory, monthDates, toggleTask, createTask, updateTask, deleteTask, taskEvents, calendarRange, timelineItems, formatMinutes, minutesOfDay, layoutTimedTasks } from './planner-model.js';
+import { tasksOnDate, completionHistory, monthDates, toggleTask, createTask, updateTask, deleteTask, taskEvents, calendarRange, timelineItems, formatMinutes, minutesOfDay, layoutTimedTasks, taskInterval, calendarSpans } from './planner-model.js';
 import { collections, saveCollection, removeCollection, matchesCollection, collectionId } from './collections.js';
 import { snoozeReminder } from './reminders.js';
 import { attachTimelineSelection } from './timeline-selection.js';
@@ -12,7 +12,7 @@ const leads = value => [0, 5, 10, 15, 30, 60, 1440].map(n => `<option value="${n
 export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowApi, onModeChange = () => {}, nativeFrame = false, beforeWindowClose = () => {} }) {
   let host, mode = 'calendar', date, month, from, to, query = '', project = '', busy = false, editing = null, restoreSize, restorePosition, restoreMaximized = false, previousFocus, opening = false;
   let view = 'month', rangeAnchor, hourHeight = 72, inspectorOpen = false, timelineScroll = null, maximizeBusy = false, activeDrag = null, nativeTitlebar = false, closeUnlisten = null, timeSelection = null;
-  const emptyDraft = () => ({ title: '', time: '', duration: '30', lead: '0', project: '' });
+  const emptyDraft = () => ({ title: '', time: '', duration: '30', lead: '0', project: '', range: '', endDate: '', endTime: '' });
   let addDraft = emptyDraft(), editDraft = null, selectedCollection = '', collectionEditor = null, deletingCollection = false, contextMenu = null, pendingDelete = null;
   const selectedTasks = (day, current) => tasksOnDate(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc));
   const selectedTimeline = (day, current) => layoutTimedTasks(timelineItems(store.doc, day, current).filter(t => matchesCollection(t, selectedCollection, store.doc)));
@@ -36,7 +36,7 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   function row(t, history = false) {
     return `<article class="planner-task ${t.completed || history ? 'is-done' : ''}" data-planner-task="${esc(t.id)}" data-task-context="${esc(t.id)}" data-task-date="${esc(t.date)}">
       <button type="button" class="planner-check" data-p="toggle" data-id="${esc(t.id)}" data-date="${esc(t.date)}" aria-label="${t.completed || history ? '重新打开' : '完成'} ${esc(t.title)}" ${t.deleted ? 'disabled' : ''}>${t.completed || history ? '✓' : '○'}</button>
-      <div class="planner-task-body"><strong>${esc(t.title)}</strong><small>${history ? `${esc(t.date)} · ${esc(stamp(t))}` : `${t.time || '全天'}${t.kind === 'daily' ? ' · 每天打卡' : ''}`}${t.archivedAt ? ' · 已归档' : ''}${t.deleted ? ' · 已删除' : ''}</small>${t.detail ? `<p>${esc(t.detail)}</p>` : ''}</div>
+      <div class="planner-task-body"><strong>${esc(t.title)}</strong><small>${history ? `${esc(t.date)} · ${esc(stamp(t))}` : `${esc(scheduleLabel(t))}${t.kind === 'daily' ? ' · 每天打卡' : ''}`}${t.archivedAt ? ' · 已归档' : ''}${t.deleted ? ' · 已删除' : ''}</small>${t.detail ? `<p>${esc(t.detail)}</p>` : ''}</div>
       ${t.deleted ? '' : `<button type="button" data-p="edit" data-id="${esc(t.id)}" data-date="${esc(t.date)}" aria-label="编辑 ${esc(t.title)}">编辑</button><button type="button" class="task-danger" data-p="task-delete" data-id="${esc(t.id)}" aria-label="删除 ${esc(t.title)}">删除</button>`}
     </article>`;
   }
@@ -140,17 +140,31 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       ${view === 'month' || inspectorOpen ? inspector(current) : ''}</div>`;
   }
 
-  function monthCalendar(current) {
-    return `<section class="planner-month-surface">
-      <div class="planner-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<span>${d}</span>`).join('')}</div>
-      <div class="planner-grid">${monthDates(month).map(d => {
-        const items = selectedTasks(d, current), done = items.filter(t => t.completed).length;
-        return `<button class="planner-day ${d.slice(0, 7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-pressed="${d === date}" aria-label="${d}，${done} 已完成，${items.length - done} 未完成"><span>${Number(d.slice(-2))}</span>${items.length ? `<small>${done} 完 / ${items.length - done} 待办</small><div class="month-previews">${items.slice(0, 3).map(t => `<div class="month-event ${t.completed ? 'done' : ''}" data-task-context="${esc(t.id)}" data-task-date="${d}" style="--task-color:${taskColor(t)}">${t.time ? t.time + ' ' : ''}${esc(t.title)}</div>`).join('')}${items.length > 3 ? `<div class="month-more">还有 ${items.length - 3} 项</div>` : ''}</div>` : '<small> </small>'}</button>`;
-      }).join('')}</div></section>`;
+  function spanButton(t, extra = '') {
+    return `<button class="calendar-span ${t.completed ? 'done' : ''} ${t.continuesBefore ? 'continues-before' : ''} ${t.continuesAfter ? 'continues-after' : ''} ${extra}" data-task-context="${esc(t.id)}" data-task-date="${t.scheduledDate}" data-p="edit" data-id="${esc(t.id)}" data-date="${t.scheduledDate}" title="${esc(t.title)} · ${esc(scheduleLabel(t))}" style="grid-column:${t.column + 1} / ${t.last + 2};grid-row:${t.lane + 1};--task-color:${taskColor(t)}">${t.continuesBefore ? '‹ ' : ''}${esc(t.title)}${t.continuesAfter ? ' ›' : ''}</button>`;
   }
-
+  function scheduleLabel(t) {
+    if (!t.endDate) return t.time || '全天';
+    return `${t.scheduledDate}${t.time ? ' ' + t.time : ''} — ${t.endDate}${t.time ? ' ' + t.endTime : '（全天）'}`;
+  }
+  function monthCalendar(current) {
+    const days = monthDates(month);
+    return `<section class="planner-month-surface"><div class="planner-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<span>${d}</span>`).join('')}</div><div class="planner-grid">${Array.from({length:6}, (_, week) => {
+      const dates = days.slice(week * 7, week * 7 + 7), spans = calendarSpans(dates.flatMap(d => selectedTasks(d, current)), dates), lanes = Math.max(0, ...spans.map(t => t.lane + 1));
+      return `<div class="month-week" style="--span-lanes:${lanes}">${dates.map(d => {
+        const items = selectedTasks(d, current), done = items.filter(t => t.completed).length;
+        const singles = items.filter(t => t.kind === 'daily' || taskInterval(t).lastDate === t.scheduledDate);
+        return `<button class="planner-day ${d.slice(0,7) !== month ? 'outside' : ''} ${d === today() ? 'today' : ''}" data-p="date" data-date="${d}" aria-pressed="${d === date}" aria-label="${d}，${done} 已完成，${items.length-done} 未完成"><span>${Number(d.slice(-2))}</span><small>${items.length ? `${done} 完 / ${items.length-done} 待办` : ' '}</small>${singles.length ? `<div class="month-previews">${singles.slice(0,3).map(t => `<div class="month-event ${t.completed ? 'done' : ''}" data-task-context="${esc(t.id)}" data-task-date="${d}" style="--task-color:${taskColor(t)}">${t.time ? t.time+' ' : ''}${esc(t.title)}</div>`).join('')}${singles.length > 3 ? `<div class="month-more">还有 ${singles.length-3} 项</div>` : ''}</div>` : ''}</button>`;
+      }).join('')}<div class="month-span-layer" style="grid-template-rows:repeat(${lanes},22px)">${spans.map(t => spanButton(t)).join('')}</div></div>`;
+    }).join('')}</div></section>`;
+  }
+  function scheduleFields(draft, daily = false, adding = false) {
+    const start = draft.date || date, end = draft.endDate || start;
+    const ranged = draft.range === 'yes';
+    return `${!daily ? `<label>${ranged ? '开始日期' : '计划日期'}<input name="date" type="date" value="${start}" required></label>` : ''}<label class="schedule-toggle"><input type="checkbox" data-schedule="all-day" ${!draft.time ? 'checked' : ''}>全天</label><div class="planner-form-row"><label>${ranged ? '开始时间' : '时间'}<input name="time" type="time" ${adding ? 'aria-label="新任务时间"' : ''} value="${esc(draft.time)}" ${ranged && draft.time ? 'required' : ''}></label>${!ranged ? `<label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${esc(draft.duration || 30)}"></label>` : ''}</div>${!daily ? `<label class="schedule-toggle"><input type="checkbox" name="range" value="yes" data-schedule="range" ${ranged ? 'checked' : ''}>设置时间段</label>` : ''}${ranged ? `<div class="schedule-end"><label>结束日期<input name="endDate" type="date" min="${start}" value="${end}" required></label>${draft.time ? `<label>结束时间<input name="endTime" type="time" value="${esc(draft.endTime || '10:00')}" required></label>` : ''}<p class="planner-help">${draft.time ? '支持跨天，结束时间须晚于开始时间。提醒按开始时间发送。' : '包含开始和结束当天，跨周会分段显示。'}</p></div>` : ''}`;
+  }
   function addForm() {
-    return `<form data-p-form="add" class="planner-add"><label>新待办<input name="title" required maxlength="500" placeholder="这一天想完成什么？" value="${esc(addDraft.title)}"></label><div class="planner-form-row"><label>时间<input name="time" type="time" aria-label="新任务时间" value="${esc(addDraft.time)}"></label><label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${esc(addDraft.duration || 30)}"></label></div><label>提醒<select name="lead">${leads(Number(addDraft.lead))}</select></label><label>合集<select name="project">${projects(addDraft.project || null)}</select></label><button type="submit">添加到 ${esc(date)}</button></form>`;
+    return `<form data-p-form="add" class="planner-add"><label>新待办<input name="title" required maxlength="500" placeholder="这一天想完成什么？" value="${esc(addDraft.title)}"></label>${scheduleFields(addDraft, false, true)}<label>提醒<select name="lead">${leads(Number(addDraft.lead))}</select></label><label>合集<select name="project">${projects(addDraft.project || null)}</select></label><button type="submit">添加到 ${esc(date)}</button></form>`;
   }
 
   function inspector(current) {
@@ -172,10 +186,11 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
   function timeCalendar(current, dates) {
     const height = 24 * hourHeight;
     const projectColor = taskColor;
+    const spans = calendarSpans(dates.flatMap(d => selectedTasks(d, current)), dates, true);
     return `<section class="timeline-panel" aria-label="${{ day: '日', three: '三日', week: '周' }[view]}时间轴"><div class="time-grid-scroll"><div class="time-grid" style="--days:${dates.length};--hour-height:${hourHeight}px;--grid-height:${height}px">
       <div class="time-grid-sticky"><div class="time-date-row"><div class="time-zone-label">GMT${new Intl.DateTimeFormat('en', { timeZone: store.doc.sync.timeZone, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName').value.replace('GMT', '')}</div>${dates.map(d => `<button class="time-date ${d === today() ? 'today' : ''}" data-p="select-day" data-date="${d}" aria-pressed="${d === date}"><span>${weekday(d)}</span><strong>${Number(d.slice(-2))}</strong></button>`).join('')}</div>
-      <div class="time-allday-row"><span class="time-allday-label">全天</span>${dates.map(d => `<div class="time-allday-cell" data-date="${d}">${selectedTasks(d, current).filter(t => !t.time).map(t => `<button class="allday-task ${t.completed ? 'done' : ''}" data-task-context="${esc(t.id)}" data-task-date="${d}" data-p="edit" data-id="${esc(t.id)}" data-date="${d}" title="${esc(t.title)}" style="--task-color:${projectColor(t)}">${t.completed ? '✓ ' : ''}${esc(t.title)}</button>`).join('')}<button class="allday-add" data-p="slot" data-date="${d}" data-time="" aria-label="${d} 添加全天任务">＋</button></div>`).join('')}</div></div>
-      <div class="time-hours-row"><div class="time-ruler" style="height:${height}px">${Array.from({ length: 24 }, (_, h) => `<span style="top:${h * hourHeight}px">${String(h).padStart(2, '0')}:00</span>`).join('')}</div>${dates.map(d => `<div class="time-day-canvas ${d === today() ? 'today' : ''}" data-date="${d}" style="height:${height}px" aria-label="${d} 时间轨">${selectedTimeline(d, current).map(t => `<article class="time-block ${t.completed ? 'done' : ''} ${(t.end - t.start) * hourHeight / 60 < 36 ? 'short' : ''}" data-task-id="${esc(t.id)}" data-task-context="${esc(t.id)}" data-task-date="${t.date}" data-origin-date="${t.date}" draggable="${t.kind === 'one_off'}" style="top:${t.start * hourHeight / 60}px;height:${Math.max(12, (t.end - t.start) * hourHeight / 60)}px;left:calc(${t.lane * 100 / t.lanes}% + 3px);width:calc(${100 / t.lanes}% - 6px);--task-color:${projectColor(t)}"><button class="time-block-open" data-p="edit" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="编辑 ${esc(t.title)}" title="${esc(t.title)} · ${t.time} — ${formatMinutes((minutesOfDay(t.time) + (t.durationMinutes || 30)) % 1440)}"><strong>${esc(t.title)}</strong><small>${t.continuesBefore ? '承接前一天' : t.time} — ${formatMinutes(t.end % 1440)}${t.continuesAfter ? '（续）' : ''}</small></button><button class="time-block-check" data-p="toggle" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="${t.completed ? '重新打开' : '完成'} ${esc(t.title)}">${t.completed ? '✓' : '○'}</button></article>`).join('')}${d === today() ? `<div class="time-now" style="top:${currentMinutes() * hourHeight / 60}px" aria-label="当前时间 ${formatMinutes(currentMinutes())}"><i></i></div>` : ''}</div>`).join('')}</div>
+      ${spans.length ? `<div class="time-range-row"><span class="time-allday-label">跨天</span><div class="time-span-layer">${spans.map(t => spanButton(t, 'allday-span')).join('')}</div></div>` : ''}<div class="time-allday-row"><span class="time-allday-label">全天</span>${dates.map(d => `<div class="time-allday-cell" data-date="${d}">${selectedTasks(d, current).filter(t => !t.time && (t.kind === 'daily' || taskInterval(t).lastDate === t.scheduledDate)).map(t => `<button class="allday-task ${t.completed ? 'done' : ''}" data-task-context="${esc(t.id)}" data-task-date="${d}" data-p="edit" data-id="${esc(t.id)}" data-date="${d}" title="${esc(t.title)}" style="--task-color:${projectColor(t)}">${t.completed ? '✓ ' : ''}${esc(t.title)}</button>`).join('')}<button class="allday-add" data-p="slot" data-date="${d}" data-time="" aria-label="${d} 添加全天任务">＋</button></div>`).join('')}</div></div>
+      <div class="time-hours-row"><div class="time-ruler" style="height:${height}px">${Array.from({ length: 24 }, (_, h) => `<span style="top:${h * hourHeight}px">${String(h).padStart(2, '0')}:00</span>`).join('')}</div>${dates.map(d => `<div class="time-day-canvas ${d === today() ? 'today' : ''}" data-date="${d}" style="height:${height}px" aria-label="${d} 时间轨">${selectedTimeline(d, current).map(t => `<article class="time-block ${t.completed ? 'done' : ''} ${(t.end - t.start) * hourHeight / 60 < 36 ? 'short' : ''}" data-task-id="${esc(t.id)}" data-task-context="${esc(t.id)}" data-task-date="${t.date}" data-origin-date="${t.date}" draggable="${t.kind === 'one_off'}" style="top:${t.start * hourHeight / 60}px;height:${Math.max(12, (t.end - t.start) * hourHeight / 60)}px;left:calc(${t.lane * 100 / t.lanes}% + 3px);width:calc(${100 / t.lanes}% - 6px);--task-color:${projectColor(t)}"><button class="time-block-open" data-p="edit" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="编辑 ${esc(t.title)}" title="${esc(t.title)} · ${esc(scheduleLabel(t))}"><strong>${esc(t.title)}</strong><small>${t.continuesBefore ? '承接前一天' : t.time} — ${t.end === 1440 ? '24:00' : formatMinutes(t.end)}${t.continuesAfter ? '（续）' : ''}</small></button><button class="time-block-check" data-p="toggle" data-id="${esc(t.id)}" data-date="${t.date}" aria-label="${t.completed ? '重新打开' : '完成'} ${esc(t.title)}">${t.completed ? '✓' : '○'}</button></article>`).join('')}${d === today() ? `<div class="time-now" style="top:${currentMinutes() * hourHeight / 60}px" aria-label="当前时间 ${formatMinutes(currentMinutes())}"><i></i></div>` : ''}</div>`).join('')}</div>
       </div></div></section>`;
   }
 
@@ -191,10 +206,10 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
 
   function editor(t) {
     if (!t) { editing = null; return ''; }
-    if (editDraft?.id !== t.id) editDraft = { id: t.id, title: t.title, detail: t.detail, date: t.scheduledDate, time: t.time || '', duration: String(t.durationMinutes || 30), lead: String(t.remindLeadMinutes || 0), project: t.projectId || '' };
+    if (editDraft?.id !== t.id) editDraft = { id: t.id, title: t.title, detail: t.detail, date: t.scheduledDate, time: t.time || '', duration: String(t.durationMinutes || 30), lead: String(t.remindLeadMinutes || 0), project: t.projectId || '', range: t.endDate ? 'yes' : '', endDate: t.endDate || '', endTime: t.endTime || '' };
     const draft = editDraft;
     const events = taskEvents(store.doc, t.id);
-    return `<form data-p-form="edit" class="planner-editor"><h4>编辑任务${t.kind === 'daily' ? ' · 每天重复' : ''}</h4><label>标题<input name="title" value="${esc(draft.title)}" required maxlength="500"></label><label>描述<textarea name="detail">${esc(draft.detail)}</textarea></label><div class="planner-form-row">${t.kind !== 'daily' ? `<label>计划日期<input name="date" type="date" value="${draft.date}" required></label>` : ''}<label>时间<input name="time" type="time" value="${draft.time}"></label></div><label>时长（分钟）<input name="duration" type="number" min="5" max="1440" required value="${draft.duration}"></label><div class="planner-form-row"><label>提醒<select name="lead">${leads(Number(draft.lead))}</select></label><label>合集<select name="project">${projects(draft.project || null)}</select></label></div><div class="planner-form-row"><button type="submit">保存修改</button><button type="button" data-p="cancel-edit">取消</button><button type="button" class="task-danger" data-p="task-delete" data-id="${esc(t.id)}">删除待办</button></div>${events.length ? `<details><summary>状态变更记录</summary>${events.map(e => `<p>${esc(new Date(e.at).toLocaleString('zh-CN', { timeZone: store.doc.sync.timeZone }))} · ${e.label}</p>`).join('')}</details>` : ''}</form>`;
+    return `<form data-p-form="edit" class="planner-editor"><h4>编辑任务${t.kind === 'daily' ? ' · 每天重复' : ''}</h4><label>标题<input name="title" value="${esc(draft.title)}" required maxlength="500"></label><label>描述<textarea name="detail">${esc(draft.detail)}</textarea></label>${scheduleFields(draft, t.kind === 'daily')}<div class="planner-form-row"><label>提醒<select name="lead">${leads(Number(draft.lead))}</select></label><label>合集<select name="project">${projects(draft.project || null)}</select></label></div><div class="planner-form-row"><button type="submit">保存修改</button><button type="button" data-p="cancel-edit">取消</button><button type="button" class="task-danger" data-p="task-delete" data-id="${esc(t.id)}">删除待办</button></div>${events.length ? `<details><summary>状态变更记录</summary>${events.map(e => `<p>${esc(new Date(e.at).toLocaleString('zh-CN', { timeZone: store.doc.sync.timeZone }))} · ${e.label}</p>`).join('')}</details>` : ''}</form>`;
   }
 
   function reminders() {
@@ -244,13 +259,17 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       date = shiftDate(rangeAnchor, step * (view === 'week' ? 7 : view === 'three' ? 3 : 1)); month = date.slice(0, 7);
     }
     rangeAnchor = date;
-    editing = null; editDraft = null; render(true);
+    alignDraftDate(); editing = null; editDraft = null; render(true);
   }
 
   const slotTime = (canvas, y) => formatMinutes(Math.max(0, Math.min(1425, Math.round((y - canvas.getBoundingClientRect().top) / hourHeight * 4) * 15)));
+  function alignDraftDate() {
+    if (addDraft.endDate && addDraft.date) addDraft.endDate = shiftDate(addDraft.endDate, Math.round((Date.parse(date) - Date.parse(addDraft.date)) / 86400000));
+    addDraft.date = date;
+  }
   function openSlot(day, time, duration) {
     captureDrafts(); date = day; month = date.slice(0, 7); editing = null; editDraft = null;
-    inspectorOpen = true; addDraft.time = time;
+    inspectorOpen = true; addDraft.time = time; addDraft.date = day; addDraft.range = ''; addDraft.endDate = ''; addDraft.endTime = '';
     if (duration !== undefined) addDraft.duration = String(duration);
     render(); host.querySelector('.planner-add input')?.focus();
   }
@@ -360,9 +379,9 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
           case 'view': view = b.dataset.view; rangeAnchor = date; editing = null; editDraft = null; persistPrefs(); render(true); break;
           case 'navigate': navigate(Number(b.dataset.step)); break;
           case 'mini-month': { const d = new Date(month + '-01T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + Number(b.dataset.step)); month = d.toISOString().slice(0, 7); render(); break; }
-          case 'date': date = b.dataset.date; rangeAnchor = date; month = date.slice(0, 7); editing = null; editDraft = null; render(true); break;
-          case 'select-day': date = b.dataset.date; editing = null; editDraft = null; inspectorOpen = true; render(); break;
-          case 'today': date = today(); rangeAnchor = date; month = date.slice(0, 7); render(true); break;
+          case 'date': date = b.dataset.date; alignDraftDate(); rangeAnchor = date; month = date.slice(0, 7); editing = null; editDraft = null; render(true); break;
+          case 'select-day': date = b.dataset.date; alignDraftDate(); editing = null; editDraft = null; inspectorOpen = true; render(); break;
+          case 'today': date = today(); alignDraftDate(); rangeAnchor = date; month = date.slice(0, 7); render(true); break;
           case 'new': inspectorOpen = true; editing = null; editDraft = null; render(); host.querySelector('.planner-add input')?.focus(); break;
           case 'hide-inspector': inspectorOpen = false; editing = null; editDraft = null; render(); break;
           case 'slot': openSlot(b.dataset.date, b.dataset.time); break;
@@ -390,6 +409,20 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
       const time = slotTime(canvas, event.clientY);
       await mutate(() => updateTask(store.doc, id, { scheduledDate: canvas.dataset.date, time }));
     });
+    host.addEventListener('change', event => {
+      const form = event.target.closest('[data-p-form="add"], [data-p-form="edit"]');
+      if (!form) return;
+      if (event.target.dataset.schedule || event.target.name === 'time') {
+        captureDrafts(); const draft = form.dataset.pForm === 'add' ? addDraft : editDraft;
+        if (event.target.dataset.schedule === 'all-day') { draft.time = event.target.checked ? '' : '09:00'; draft.endTime = event.target.checked ? '' : '10:00'; }
+        if (event.target.dataset.schedule === 'range' && event.target.checked && !draft.endDate) {
+          const start = Date.parse(draft.date || date) / 60000 + (draft.time ? minutesOfDay(draft.time) : 0), end = start + Number(draft.duration || 30);
+          draft.endDate = draft.time ? new Date(end * 60000).toISOString().slice(0,10) : draft.date || date;
+          draft.endTime = formatMinutes(end % 1440);
+        }
+        render();
+      }
+    });
     host.addEventListener('submit', async event => {
       event.preventDefault(); if (busy) return;
       const form = event.target, data = Object.fromEntries(new FormData(form));
@@ -401,8 +434,8 @@ export function createPlanner({ store, beforeOpen, notify, nativeWindow, windowA
         await mutate(() => { selectedCollection = saveCollection(store.doc, { ...data, id: collectionEditor.id }); }, () => { collectionEditor = null; addDraft.project = selectedCollection; });
         return;
       }
-      const values = { title: data.title, time: data.time || null, durationMinutes: Number(data.duration), remindLeadMinutes: Number(data.lead), projectId: data.project || null };
-      if (form.dataset.pForm === 'add') await mutate(() => createTask(store.doc, { ...values, scheduledDate: date }), () => { addDraft = { ...emptyDraft(), project: selectedCollection === 'none' ? '' : selectedCollection }; });
+      const values = { title: data.title, time: data.time || null, durationMinutes: Number(data.duration || 30), endDate: data.range === 'yes' ? data.endDate : null, endTime: data.range === 'yes' && data.time ? data.endTime : null, remindLeadMinutes: Number(data.lead), projectId: data.project || null };
+      if (form.dataset.pForm === 'add') await mutate(() => createTask(store.doc, { ...values, scheduledDate: data.date || date }), () => { addDraft = { ...emptyDraft(), project: selectedCollection === 'none' ? '' : selectedCollection }; });
       else if (form.dataset.pForm === 'edit') await mutate(() => updateTask(store.doc, editing, { ...values, detail: data.detail, ...(data.date ? { scheduledDate: data.date } : {}) }), () => { editing = null; editDraft = null; });
     });
     render(); host.querySelector('[data-p="mode"]').focus();

@@ -196,3 +196,21 @@
   .calendar-views button { min-width: 34px; padding: 6px 8px; }
   .planner-window-actions { gap: 4px; }
 }
+/* Date ranges share a single colored bar across each visible week. */
+.planner-month-surface .planner-grid { display:flex; flex-direction:column; }
+.month-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); position:relative; flex:1 0 auto; min-height:calc(115px + var(--span-lanes) * 22px); }
+.planner-month-surface .month-week .planner-day { padding:8px; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; text-align:left; min-width:0; }
+.month-week .planner-day > span { align-self:flex-start; }
+.month-week .month-previews { margin-top:calc(var(--span-lanes) * 22px); }
+.month-span-layer { position:absolute; top:51px; left:0; right:0; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-auto-rows:22px; pointer-events:none; }
+.planner-shell .calendar-span { pointer-events:auto; min-width:0; margin:1px 3px; padding:2px 6px; height:20px; border:0; border-radius:4px; background:color-mix(in srgb,var(--task-color) 27%,rgb(var(--panel-top))); color:var(--text); font-size:11px; line-height:16px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.planner-shell .calendar-span:hover { background:color-mix(in srgb,var(--task-color) 42%,rgb(var(--panel-top))); }
+.calendar-span.continues-before { margin-left:0; border-top-left-radius:0; border-bottom-left-radius:0; }
+.calendar-span.continues-after { margin-right:0; border-top-right-radius:0; border-bottom-right-radius:0; }
+.calendar-span.done { text-decoration:line-through; opacity:.55; }
+.time-range-row { display:grid; grid-template-columns:58px minmax(0,1fr); border-bottom:1px solid var(--calendar-line); }
+.time-span-layer { display:grid; grid-template-columns:repeat(var(--days),minmax(0,1fr)); grid-auto-rows:24px; padding:3px 0; }
+.planner-shell .schedule-toggle { display:flex; align-items:center; gap:7px; padding:3px 0; }
+.planner-shell .schedule-toggle input { width:auto; accent-color:var(--accent); }
+.schedule-end { display:grid; gap:9px; padding:10px; background:rgba(var(--accent-rgb),.04); border:1px solid var(--calendar-line); border-radius:8px; }
+@media(max-width:640px) { .month-week { min-height:calc(80px + var(--span-lanes) * 22px); } .month-span-layer { top:48px; } .planner-shell .calendar-span { font-size:10px; padding:2px 3px; } }

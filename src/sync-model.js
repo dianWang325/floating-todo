@@ -112,7 +112,15 @@ export function validateRevision(r) {
       for (const key of ['completedAt', 'archivedAt']) if (p[key] != null && (!Number.isSafeInteger(p[key]) || p[key] < 0)) throw new Error('任务时间格式不正确');
       if (p.completedDate != null && !validDate(p.completedDate)) throw new Error('完成日期格式不正确');
       if (p.remindLeadMinutes != null && (!Number.isInteger(p.remindLeadMinutes) || p.remindLeadMinutes < 0 || p.remindLeadMinutes > 10080)) throw new Error('提前提醒时间格式不正确');
-      if (p.durationMinutes != null && (!Number.isInteger(p.durationMinutes) || p.durationMinutes < 5 || p.durationMinutes > 1440)) throw new Error('任务时长需要在 5 分钟到 24 小时之间');
+      if (p.durationMinutes != null && (!Number.isInteger(p.durationMinutes) || p.durationMinutes < 5 || p.durationMinutes > (p.endDate && p.kind === 'one_off' ? 5256000 : 1440))) throw new Error(p.endDate ? '结束时间须晚于开始时间至少 5 分钟，最长支持 10 年' : '任务时长需要在 5 分钟到 24 小时之间');
+      if (p.endDate != null) {
+        if (p.kind !== 'one_off' || !validDate(p.endDate) || p.endDate < p.scheduledDate) throw new Error('结束日期不能早于开始日期');
+        if (p.time) {
+          if (!text(p.endTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(p.endTime)) throw new Error('请填写结束时间');
+          const span = (Date.parse(p.endDate + 'T' + p.endTime + ':00Z') - Date.parse(p.scheduledDate + 'T' + p.time + ':00Z')) / 60000;
+          if (span < 5 || span > 5256000 || p.durationMinutes !== span) throw new Error('结束时间须晚于开始时间至少 5 分钟，最长支持 10 年');
+        } else if (p.endTime != null) throw new Error('全天任务不能单独设置结束时间');
+      } else if (p.endTime != null) throw new Error('请填写结束日期');
       break;
     case 'projects': case 'tags':
       if (p.id !== r.entityId || !text(p.name) || !p.name.trim() || !/^#[0-9a-f]{6}$/i.test(p.color)) throw new Error('同步分类格式不正确'); break;
@@ -140,7 +148,7 @@ export function mergeRevisions(doc, incoming) {
 }
 function taskPayload(task, kind, date) {
   const payload = { id: task.id, kind, title: task.title, detail: task.detail || '', time: task.time || null, completed: kind === 'daily' ? false : !!task.completed, createdAt: task.createdAt || 0, scheduledDate: kind === 'daily' ? null : isoDate(task.scheduledDate || date), projectId: task.projectId || null, tagIds: [...(task.tagIds || [])].sort(), ...(task.legacyStreak ? { legacyStreak: task.legacyStreak } : {}) };
-  for (const key of ['completedAt', 'completedDate', 'archivedAt', 'remindLeadMinutes', 'durationMinutes']) if (task[key] != null && (kind !== 'daily' || ['remindLeadMinutes', 'durationMinutes'].includes(key))) payload[key] = task[key];
+  for (const key of ['completedAt', 'completedDate', 'archivedAt', 'remindLeadMinutes', 'durationMinutes', 'endDate', 'endTime']) if (task[key] != null && (kind !== 'daily' || ['remindLeadMinutes', 'durationMinutes'].includes(key))) payload[key] = task[key];
   return payload;
 }
 function viewEntities(view) {
@@ -182,7 +190,19 @@ function localFromView(view) {
 }
 export function commitView(doc, before, after) {
   const previous = viewEntities(before), next = viewEntities(after);
-  for (const [key, value] of next) if (!previous.has(key) || canonical(previous.get(key).payload) !== canonical(value.payload)) writeRevision(doc, value.type, value.id, value.payload);
+  for (const [key, value] of next) {
+    const old = previous.get(key)?.payload, task = value.payload;
+    // Widget date/time edits move the entire interval, preserving its length.
+    if (value.type === 'task' && task.kind === 'one_off' && old?.endDate && task.endDate === old.endDate && task.endTime === old.endTime && (task.scheduledDate !== old.scheduledDate || task.time !== old.time)) {
+      if (task.time) {
+        const minute = t => Number(t.slice(0,2)) * 60 + Number(t.slice(3));
+        const duration = old.time ? old.durationMinutes : (Date.parse(old.endDate) - Date.parse(old.scheduledDate)) / 60000 + 1440;
+        const end = Date.parse(task.scheduledDate) + (minute(task.time) + duration) * 60000;
+        task.endDate = new Date(end).toISOString().slice(0,10); task.endTime = new Date(end).toISOString().slice(11,16); task.durationMinutes = duration;
+      } else { task.endDate = shiftDate(old.endDate, Math.round((Date.parse(task.scheduledDate) - Date.parse(old.scheduledDate)) / 86400000)); task.endTime = null; }
+    }
+    if (!old || canonical(old) !== canonical(task)) writeRevision(doc, value.type, value.id, task);
+  }
   for (const [key, value] of previous) if (!next.has(key) && value.type !== 'completion') writeRevision(doc, value.type, value.id, value.payload, { deleted: true });
   // New tasks sort first, without generating edits for every existing task.
   const current = currentEntities(doc);
